@@ -1,0 +1,50 @@
+# Build output
+/bin/
+*.exe
+*.test
+*.out
+coverage.out
+
+# Binaries accidentally built into the repository root. `go build ./cmd/...`
+# without -o leaves one per command here; they are 25 MB each and must never be
+# committed. Use `make build`, which writes to ./bin.
+/control
+/edge
+/edgemeshctl
+/origin-demo
+
+# Local runtime state
+/.data/
+/.run/
+*.log
+loadtest-summary.json
+
+# Development certificates. A private key must never be committed, and a
+# committed development key has a way of becoming a production key.
+/certs/
+*.pem
+*.key
+*.crt
+*.csr
+*.srl
+
+# Secrets
+.env
+!.env.example
+
+# Terraform state contains resource identifiers and can contain secrets.
+**/.terraform/
+**/.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfvars
+!example.tfvars
+
+# Fuzzing corpora can grow without bound; the seeds live in the test files.
+**/testdata/fuzz/
+
+# Editor and OS noise
+.DS_Store
+.idea/
+.vscode/
+*.swp
