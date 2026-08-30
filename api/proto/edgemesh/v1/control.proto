@@ -1,0 +1,245 @@
+syntax = "proto3";
+
+package edgemesh.v1;
+
+option go_package = "github.com/sheehanlloyd/edgemesh/api/gen/edgemesh/v1;edgemeshv1";
+
+// ---------------------------------------------------------------------------
+// Replicated configuration objects.
+//
+// These messages are the wire form of the Raft state machine's contents. Field
+// numbers are permanent: never reuse a number, reserve removed ones.
+// ---------------------------------------------------------------------------
+
+message CachePolicy {
+  bool enabled = 1;
+  uint32 default_ttl_seconds = 2;
+  uint32 max_ttl_seconds = 3;
+  // Statuses eligible for admission. Empty means {200}.
+  repeated int32 cacheable_statuses = 4;
+  // Cookie names whose presence still permits caching. Empty means "no cookies".
+  repeated string allowed_cookies = 5;
+  // Sort query parameters into canonical order before keying. Off by default:
+  // parameter order can be semantically meaningful for some origins.
+  bool canonical_query = 6;
+  // Serve a stale object while an asynchronous revalidation runs.
+  uint32 stale_while_revalidate_seconds = 7;
+  // Cache selected error statuses for a short conservative TTL.
+  bool negative_caching = 8;
+  uint32 negative_ttl_seconds = 9;
+  // Allow admission of responses carrying Set-Cookie. Off by default.
+  bool allow_set_cookie = 10;
+  // Request headers included in the cache key regardless of the origin's Vary.
+  repeated string vary_headers = 11;
+}
+
+message RateLimitPolicy {
+  bool enabled = 1;
+  double rate_per_second = 2;
+  uint32 burst = 3;
+  KeyStrategy key_strategy = 4;
+  string header_name = 5;
+}
+
+enum KeyStrategy {
+  KEY_STRATEGY_UNSPECIFIED = 0;
+  KEY_STRATEGY_GLOBAL = 1;
+  KEY_STRATEGY_CLIENT_IP = 2;
+  KEY_STRATEGY_HEADER = 3;
+}
+
+message TimeoutPolicy {
+  uint32 connect_ms = 1;
+  uint32 response_header_ms = 2;
+  uint32 request_ms = 3;
+}
+
+message RetryPolicy {
+  bool enabled = 1;
+  uint32 max_retries = 2;
+  repeated int32 retry_on_statuses = 3;
+  uint32 backoff_base_ms = 4;
+  uint32 backoff_max_ms = 5;
+}
+
+message HeaderPolicy {
+  // Preserve the client's Host header instead of rewriting it to the origin.
+  bool preserve_host = 1;
+  map<string, string> request_set = 2;
+  repeated string request_remove = 3;
+  map<string, string> response_set = 4;
+  repeated string response_remove = 5;
+  // Emit X-EdgeMesh-* diagnostic headers on proxied responses.
+  bool diagnostic_headers = 6;
+}
+
+message Route {
+  string id = 1;
+  string hostname = 2;
+  string path_prefix = 3;
+  string origin_pool_id = 4;
+  bool enabled = 5;
+  CachePolicy cache_policy = 6;
+  RateLimitPolicy rate_limit_policy = 7;
+  TimeoutPolicy timeout_policy = 8;
+  RetryPolicy retry_policy = 9;
+  HeaderPolicy header_policy = 10;
+  int64 created_at_unix_ms = 11;
+  int64 updated_at_unix_ms = 12;
+  uint64 version = 13;
+}
+
+message Origin {
+  string id = 1;
+  string scheme = 2;
+  string host = 3;
+  uint32 port = 4;
+  uint32 weight = 5;
+  string health_path = 6;
+  repeated int32 expected_statuses = 7;
+}
+
+enum LoadBalancing {
+  LOAD_BALANCING_UNSPECIFIED = 0;
+  LOAD_BALANCING_ROUND_ROBIN = 1;
+  LOAD_BALANCING_WEIGHTED_ROUND_ROBIN = 2;
+}
+
+message OriginPool {
+  string id = 1;
+  repeated Origin origins = 2;
+  LoadBalancing load_balancing = 3;
+  uint32 health_interval_ms = 4;
+  uint32 unhealthy_threshold = 5;
+  uint32 healthy_threshold = 6;
+  uint32 health_timeout_ms = 7;
+  int64 created_at_unix_ms = 8;
+  int64 updated_at_unix_ms = 9;
+  uint64 version = 10;
+}
+
+message GlobalSettings {
+  // Replication factor for the L2 peer cache (owner + successors).
+  uint32 replication_factor = 1;
+  // Virtual nodes per physical edge on the consistent hash ring.
+  uint32 ring_virtual_nodes = 2;
+  uint64 max_object_bytes = 3;
+}
+
+message EdgeNode {
+  string id = 1;
+  string region = 2;
+  string zone = 3;
+  string peer_address = 4;
+  string public_address = 5;
+  uint32 weight = 6;
+  int64 last_seen_unix_ms = 7;
+  NodeState state = 8;
+  uint64 config_version_applied = 9;
+  string version = 10;
+  // Last reported cache occupancy, refreshed on every heartbeat.
+  //
+  // This field is observability only and is deliberately stripped from the
+  // membership snapshot that defines ring ownership: that snapshot must stay
+  // byte-stable for a given version so two edges building a ring from the same
+  // version derive identical ownership. Stats change every heartbeat, so
+  // carrying them there would break that property and rebroadcast the ring to
+  // the whole fleet for data only the admin API reads.
+  EdgeStats stats = 11;
+}
+
+enum NodeState {
+  NODE_STATE_UNSPECIFIED = 0;
+  NODE_STATE_HEALTHY = 1;
+  NODE_STATE_SUSPECT = 2;
+  NODE_STATE_DEAD = 3;
+}
+
+message Membership {
+  repeated EdgeNode nodes = 1;
+  uint64 version = 2;
+}
+
+message PurgeDirective {
+  PurgeScope scope = 1;
+  string route_id = 2;
+  string cache_key = 3;
+  uint64 version = 4;
+  int64 issued_at_unix_ms = 5;
+}
+
+enum PurgeScope {
+  PURGE_SCOPE_UNSPECIFIED = 0;
+  PURGE_SCOPE_KEY = 1;
+  PURGE_SCOPE_ROUTE = 2;
+  PURGE_SCOPE_ALL = 3;
+}
+
+// ConfigSnapshot is the full replicated configuration at a version.
+message ConfigSnapshot {
+  repeated Route routes = 1;
+  repeated OriginPool origin_pools = 2;
+  GlobalSettings settings = 3;
+  Membership membership = 4;
+  repeated PurgeDirective recent_purges = 5;
+  uint64 config_version = 6;
+}
+
+// ---------------------------------------------------------------------------
+// Edge <-> control-plane protocol.
+// ---------------------------------------------------------------------------
+
+message WatchConfigRequest {
+  string node_id = 1;
+  uint64 known_config_version = 2;
+  EdgeNode registration = 3;
+}
+
+message ConfigEvent {
+  oneof event {
+    ConfigSnapshot full_snapshot = 1;
+    Route route_changed = 2;
+    string route_deleted = 3;
+    OriginPool origin_pool_changed = 4;
+    string origin_pool_deleted = 5;
+    Membership membership_changed = 6;
+    PurgeDirective purge = 7;
+    LeaderNotice leader_notice = 8;
+    GlobalSettings settings_changed = 9;
+  }
+  uint64 config_version = 10;
+}
+
+message LeaderNotice {
+  string leader_id = 1;
+  string leader_control_address = 2;
+  bool is_leader = 3;
+}
+
+message HeartbeatRequest {
+  string node_id = 1;
+  EdgeNode node = 2;
+  uint64 config_version_applied = 3;
+  EdgeStats stats = 4;
+}
+
+message EdgeStats {
+  uint64 inflight_requests = 1;
+  uint64 cache_objects = 2;
+  uint64 cache_bytes = 3;
+  double requests_per_second = 4;
+}
+
+message HeartbeatResponse {
+  bool accepted = 1;
+  string leader_id = 2;
+  string leader_control_address = 3;
+  uint64 config_version = 4;
+  // Set when the leader has no record of this node and wants a re-register.
+  bool reregister = 5;
+}
+
+service EdgeControl {
+  rpc WatchConfig(WatchConfigRequest) returns (stream ConfigEvent);
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+}

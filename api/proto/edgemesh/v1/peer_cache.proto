@@ -1,0 +1,107 @@
+syntax = "proto3";
+
+package edgemesh.v1;
+
+option go_package = "github.com/sheehanlloyd/edgemesh/api/gen/edgemesh/v1;edgemeshv1";
+
+import "edgemesh/v1/control.proto";
+
+message Header {
+  string name = 1;
+  repeated string values = 2;
+}
+
+message GetOrFetchRequest {
+  // Normalized route identifier resolved by the ingress edge.
+  string route_id = 1;
+  // Fully-formed cache key computed by the ingress edge. The owner recomputes
+  // nothing: the key is the contract between peers.
+  string cache_key = 2;
+  string method = 3;
+  string path = 4;
+  string raw_query = 5;
+  // Strictly allowlisted subset of client headers required for the origin
+  // request. Never carries admin/internal headers.
+  repeated Header headers = 6;
+  string client_host = 7;
+  // Hop counter: an owner must never re-forward a peer request to another peer.
+  uint32 hop = 8;
+}
+
+message ObjectMetadata {
+  int32 status = 1;
+  repeated Header headers = 2;
+  uint64 content_length = 3;
+  int64 stored_at_unix_ms = 4;
+  int64 expires_at_unix_ms = 5;
+  uint64 age_seconds = 6;
+  CacheOutcome outcome = 7;
+  string checksum_sha256 = 8;
+  string served_by = 9;
+  bool cacheable = 10;
+}
+
+enum CacheOutcome {
+  CACHE_OUTCOME_UNSPECIFIED = 0;
+  CACHE_OUTCOME_HIT = 1;
+  CACHE_OUTCOME_MISS = 2;
+  CACHE_OUTCOME_BYPASS = 3;
+  CACHE_OUTCOME_STALE = 4;
+  CACHE_OUTCOME_REVALIDATED = 5;
+}
+
+message ObjectChunk {
+  oneof payload {
+    ObjectMetadata metadata = 1;
+    bytes body = 2;
+  }
+}
+
+message ReplicaChunk {
+  oneof payload {
+    ReplicaHeader header = 1;
+    bytes body = 2;
+  }
+}
+
+message ReplicaHeader {
+  string cache_key = 1;
+  string route_id = 2;
+  ObjectMetadata metadata = 3;
+  string source_node_id = 4;
+}
+
+message PutReplicaResponse {
+  bool stored = 1;
+  string reason = 2;
+}
+
+message PurgeRequest {
+  PurgeScope scope = 1;
+  string cache_key = 2;
+  string route_id = 3;
+  uint64 version = 4;
+}
+
+message PurgeResponse {
+  uint64 purged_objects = 1;
+}
+
+message PeerHealthRequest {
+  string from_node_id = 1;
+}
+
+message PeerHealthResponse {
+  string node_id = 1;
+  bool ready = 2;
+  uint64 config_version = 3;
+  uint64 cache_objects = 4;
+  uint64 cache_bytes = 5;
+}
+
+service PeerCache {
+  rpc GetOrFetch(GetOrFetchRequest) returns (stream ObjectChunk);
+  rpc PutReplica(stream ReplicaChunk) returns (PutReplicaResponse);
+  rpc Purge(PurgeRequest) returns (PurgeResponse);
+  rpc Health(PeerHealthRequest) returns (PeerHealthResponse);
+}
