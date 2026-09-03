@@ -1,0 +1,71 @@
+# EdgeMesh edge node edge-3: local (non-container) development topology.
+mode: development
+
+node:
+  id: edge-3
+  region: local-a
+  zone: local-a3
+  public_address: 127.0.0.1:8083
+  peer_address: 127.0.0.1:7303
+  advertise_peer_address: 127.0.0.1:7303
+  advertise_public_address: 127.0.0.1:8083
+  weight: 1
+
+control_plane:
+  endpoints:
+    - 127.0.0.1:7201
+    - 127.0.0.1:7202
+    - 127.0.0.1:7203
+  heartbeat_interval: 2s
+  reconnect_backoff_min: 250ms
+  reconnect_backoff_max: 5s
+
+cache:
+  l1_max_bytes: 268435456
+  l2_max_bytes: 536870912
+  max_object_bytes: 8388608
+  # A power of two so shard selection is a mask rather than a modulo.
+  shards: 64
+  replication_factor: 2
+  cleanup_interval: 30s
+  # lru is the V1 baseline; tinylfu is the frequency-aware comparison.
+  policy: lru
+  replication_queue: 1024
+  replication_workers: 4
+  replication_timeout: 5s
+
+proxy:
+  request_timeout: 15s
+  read_header_timeout: 5s
+  idle_timeout: 60s
+  max_header_bytes: 1048576
+  drain_timeout: 20s
+  max_concurrent_requests: 4096
+  # Empty means trust no proxy, so a client cannot forge X-Forwarded-For.
+  trusted_proxy_cidrs: []
+  origin_dial_timeout: 3s
+  origin_keep_alive: 30s
+  origin_max_idle_conns: 512
+  origin_max_idle_conns_per_host: 128
+  origin_idle_conn_timeout: 90s
+  origin_response_header_timeout: 10s
+  propagate_trace_to_origin: true
+
+security:
+  enabled: false
+
+origin_security:
+  # Development mode enables these automatically; they are shown for clarity.
+  allow_loopback: true
+  allow_private_networks: true
+  allowed_cidrs: []
+  denied_cidrs: []
+
+peer_rpc_timeout: 10s
+
+telemetry:
+  address: 127.0.0.1:9203
+  log_level: info
+  log_format: text
+  trace_sample_ratio: 1.0
+  enable_pprof: true

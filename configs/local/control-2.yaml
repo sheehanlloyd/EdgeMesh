@@ -1,0 +1,57 @@
+# EdgeMesh control node cp-2: local (non-container) development topology.
+#
+# Ports follow a fixed offset convention so a peer's admin and edge addresses
+# can be derived from its Raft address: admin = raft + 100, edge = raft + 200.
+mode: development
+
+node:
+  id: cp-2
+  raft_address: 127.0.0.1:7002
+  admin_address: 127.0.0.1:7102
+  edge_address: 127.0.0.1:7202
+  advertise_admin_address: 127.0.0.1:7102
+  advertise_edge_address: 127.0.0.1:7202
+
+raft:
+  peers:
+    - id: cp-1
+      address: 127.0.0.1:7001
+    - id: cp-2
+      address: 127.0.0.1:7002
+    - id: cp-3
+      address: 127.0.0.1:7003
+  # The heartbeat must stay well under election_timeout_min or a healthy leader
+  # gets displaced by ordinary scheduling jitter.
+  election_timeout_min: 500ms
+  election_timeout_max: 900ms
+  heartbeat_interval: 150ms
+  snapshot_entries: 1000
+  snapshot_bytes: 8388608
+  max_entries_per_append: 64
+  snapshot_chunk_bytes: 262144
+  rpc_timeout: 2s
+  # Pre-vote stops a node returning from a partition from disrupting a healthy
+  # leader merely by having advanced its own term while isolated.
+  pre_vote: true
+  data_dir: ./.data/cp-2
+
+security:
+  # Development runs plaintext so the demo needs no certificate setup.
+  # Production-mode configuration validation refuses this.
+  enabled: false
+
+admin_auth:
+  enabled: false
+
+membership:
+  heartbeat_interval: 2s
+  suspect_after_missed: 2
+  dead_after_missed: 3
+  sweep_interval: 1s
+
+telemetry:
+  address: 127.0.0.1:9102
+  log_level: info
+  log_format: text
+  trace_sample_ratio: 1.0
+  enable_pprof: true
