@@ -1,0 +1,229 @@
+# EdgeMesh Helm values.
+#
+# The defaults describe a small demonstration deployment. Anything that would
+# cost money or weaken security is opt-in.
+
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  registry: ""
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+  control:
+    repository: edgemesh/control
+    tag: ""   # defaults to .Chart.AppVersion
+  edge:
+    repository: edgemesh/edge
+    tag: ""
+  origin:
+    repository: edgemesh/origin
+    tag: ""
+
+# ---------------------------------------------------------------------------
+# Control plane
+# ---------------------------------------------------------------------------
+control:
+  # Raft requires an odd member count to form a majority. Three is the
+  # reference size; the chart refuses even counts because an even cluster has
+  # the same fault tolerance as the odd size below it while needing more nodes.
+  replicaCount: 3
+
+  ports:
+    raft: 7000
+    admin: 7100
+    edge: 7300
+    telemetry: 9100
+
+  raft:
+    electionTimeoutMin: 500ms
+    electionTimeoutMax: 900ms
+    heartbeatInterval: 150ms
+    snapshotEntries: 1000
+    # Pre-vote stops a node returning from a partition from disrupting a
+    # healthy leader.
+    preVote: true
+
+  membership:
+    heartbeatInterval: 2s
+    suspectAfterMissed: 2
+    deadAfterMissed: 3
+    sweepInterval: 1s
+
+  persistence:
+    enabled: true
+    size: 4Gi
+    storageClass: ""
+    accessModes: [ReadWriteOnce]
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+
+  # A PodDisruptionBudget of one keeps voluntary disruption from removing a
+  # quorum: with three members, losing two at once makes the cluster unwritable.
+  podDisruptionBudget:
+    enabled: true
+    maxUnavailable: 1
+
+  # Spreading across nodes means a single node failure cannot take a majority.
+  topologySpreadConstraints:
+    enabled: true
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# ---------------------------------------------------------------------------
+# Edge plane
+# ---------------------------------------------------------------------------
+edge:
+  replicaCount: 3
+
+  ports:
+    public: 8080
+    peer: 7200
+    telemetry: 9200
+
+  service:
+    type: ClusterIP
+    port: 80
+    annotations: {}
+
+  cache:
+    l1MaxBytes: 268435456     # 256 MiB
+    l2MaxBytes: 536870912     # 512 MiB
+    maxObjectBytes: 8388608   # 8 MiB
+    shards: 64                # must be a power of two
+    replicationFactor: 2
+    cleanupInterval: 30s
+    policy: lru               # lru | tinylfu
+    replicationQueue: 1024
+    replicationWorkers: 4
+    replicationTimeout: 5s
+
+  proxy:
+    requestTimeout: 15s
+    readHeaderTimeout: 5s
+    idleTimeout: 60s
+    maxHeaderBytes: 1048576
+    drainTimeout: 20s
+    maxConcurrentRequests: 4096
+    # Networks whose X-Forwarded-For may be appended to rather than replaced.
+    # Empty means trust nobody, which is the safe default.
+    trustedProxyCIDRs: []
+    propagateTraceToOrigin: true
+
+  originSecurity:
+    allowLoopback: false
+    # In-cluster origins are private addresses, so this must be enabled for a
+    # Kubernetes deployment. Production mode additionally requires the exact
+    # networks to be listed in allowedCIDRs.
+    allowPrivateNetworks: true
+    allowedCIDRs: []
+    deniedCIDRs: []
+
+  resources:
+    requests:
+      cpu: 200m
+      memory: 384Mi
+    limits:
+      # The cache budget plus headroom. A limit below l1+l2 would make the pod
+      # OOM-kill under normal operation.
+      memory: 1Gi
+
+  autoscaling:
+    enabled: false
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+
+  podDisruptionBudget:
+    enabled: true
+    maxUnavailable: 1
+
+  topologySpreadConstraints:
+    enabled: true
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# ---------------------------------------------------------------------------
+# Demo origin
+# ---------------------------------------------------------------------------
+origin:
+  enabled: true
+  replicaCount: 2
+  port: 9000
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
+
+# ---------------------------------------------------------------------------
+# Shared settings
+# ---------------------------------------------------------------------------
+
+# mode: development | production.
+# Production requires mTLS and admin authentication, and refuses pprof.
+mode: development
+
+security:
+  mtls:
+    enabled: false
+    # Name of a secret holding ca.crt plus per-node cert/key pairs.
+    secretName: edgemesh-tls
+
+adminAuth:
+  enabled: false
+  # Name of a secret with a "token" key. The token is never templated into a
+  # ConfigMap: configuration should stay safe to read.
+  existingSecret: ""
+
+telemetry:
+  logLevel: info
+  logFormat: json
+  traceSampleRatio: 1.0
+  otlpEndpoint: ""      # e.g. otel-collector:4317; empty disables trace export
+  otlpInsecure: true
+  enablePprof: false
+
+serviceMonitor:
+  # Requires the Prometheus Operator CRDs.
+  enabled: false
+  interval: 15s
+  labels: {}
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+podAnnotations: {}
+podLabels: {}
+
+# Containers run unprivileged with a read-only root filesystem: the images are
+# scratch-based and need nothing writable except the Raft data volume.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]

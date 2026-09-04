@@ -1,0 +1,49 @@
+{{- $ctl := include "edgemesh.controlFullname" . -}}
+{{- $headless := include "edgemesh.controlHeadless" . -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $ctl }}
+  labels:
+    {{- include "edgemesh.labels" . | nindent 4 }}
+    app.kubernetes.io/component: control
+data:
+  # The node id is injected at runtime from the pod's ordinal, so one ConfigMap
+  # serves every replica. Templating a config per replica would make scaling a
+  # chart change instead of a value change.
+  control.yaml.tmpl: |
+    mode: {{ .Values.mode }}
+
+    node:
+      id: __NODE_ID__
+      raft_address: 0.0.0.0:{{ .Values.control.ports.raft }}
+      admin_address: 0.0.0.0:{{ .Values.control.ports.admin }}
+      edge_address: 0.0.0.0:{{ .Values.control.ports.edge }}
+      advertise_admin_address: __POD_FQDN__:{{ .Values.control.ports.admin }}
+      advertise_edge_address: __POD_FQDN__:{{ .Values.control.ports.edge }}
+
+    raft:
+      peers:
+      {{- include "edgemesh.raftPeers" . | nindent 4 }}
+      election_timeout_min: {{ .Values.control.raft.electionTimeoutMin }}
+      election_timeout_max: {{ .Values.control.raft.electionTimeoutMax }}
+      heartbeat_interval: {{ .Values.control.raft.heartbeatInterval }}
+      snapshot_entries: {{ .Values.control.raft.snapshotEntries }}
+      pre_vote: {{ .Values.control.raft.preVote }}
+      data_dir: /var/lib/edgemesh
+
+    {{- include "edgemesh.securityConfig" . | nindent 4 }}
+
+    admin_auth:
+      enabled: {{ .Values.adminAuth.enabled }}
+      {{- if .Values.adminAuth.enabled }}
+      token_file: /etc/edgemesh/auth/token
+      {{- end }}
+
+    membership:
+      heartbeat_interval: {{ .Values.control.membership.heartbeatInterval }}
+      suspect_after_missed: {{ .Values.control.membership.suspectAfterMissed }}
+      dead_after_missed: {{ .Values.control.membership.deadAfterMissed }}
+      sweep_interval: {{ .Values.control.membership.sweepInterval }}
+
+    {{- include "edgemesh.telemetryConfig" (dict "root" . "port" .Values.control.ports.telemetry) | nindent 4 }}

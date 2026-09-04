@@ -1,0 +1,69 @@
+{{- if .Values.origin.enabled }}
+{{- $origin := include "edgemesh.originFullname" . -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $origin }}
+  labels:
+    {{- include "edgemesh.labels" . | nindent 4 }}
+    app.kubernetes.io/component: origin
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "edgemesh.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: origin
+  ports:
+    - {name: http, port: {{ .Values.origin.port }}, targetPort: http}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $origin }}
+  labels:
+    {{- include "edgemesh.labels" . | nindent 4 }}
+    app.kubernetes.io/component: origin
+spec:
+  replicas: {{ .Values.origin.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "edgemesh.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: origin
+  template:
+    metadata:
+      labels:
+        {{- include "edgemesh.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: origin
+    spec:
+      serviceAccountName: {{ include "edgemesh.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: origin
+          image: {{ include "edgemesh.image" (dict "root" $ "spec" .Values.image.origin) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - --addr
+            - 0.0.0.0:{{ .Values.origin.port }}
+            - --id
+            - $(POD_NAME)
+          env:
+            - name: POD_NAME
+              valueFrom: {fieldRef: {fieldPath: metadata.name}}
+          ports:
+            - {name: http, containerPort: {{ .Values.origin.port }}}
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.origin.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+{{- end }}

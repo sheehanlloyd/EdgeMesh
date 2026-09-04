@@ -1,0 +1,57 @@
+{{/*
+Fail the install rather than deploying a configuration that cannot work.
+
+Catching these at template time turns a subtle runtime failure (a cluster that
+never elects a leader, a pod that OOM-kills under normal load) into an
+immediate, readable error.
+*/}}
+
+{{- if lt (int .Values.control.replicaCount) 3 }}
+{{- fail (printf "control.replicaCount must be at least 3 for a fault-tolerant Raft cluster, got %d. A cluster of 1 has no redundancy and a cluster of 2 cannot tolerate any failure." (int .Values.control.replicaCount)) }}
+{{- end }}
+
+{{- if eq (mod (int .Values.control.replicaCount) 2) 0 }}
+{{- fail (printf "control.replicaCount must be odd so a majority is well defined, got %d. An even cluster tolerates the same number of failures as the odd size below it while costing an extra node." (int .Values.control.replicaCount)) }}
+{{- end }}
+
+{{/*
+Shard selection masks the key hash, so the count must be a power of two.
+Helm has no bitwise AND, so the check is a membership test over the values that
+are actually sensible for a cache tier.
+*/}}
+{{- $shards := int .Values.edge.cache.shards }}
+{{- $validShards := list 1 2 4 8 16 32 64 128 256 512 1024 2048 4096 }}
+{{- if not (has $shards $validShards) }}
+{{- fail (printf "edge.cache.shards must be a power of two between 1 and 4096, got %d" $shards) }}
+{{- end }}
+
+{{- if gt (int .Values.edge.cache.maxObjectBytes) (int .Values.edge.cache.l1MaxBytes) }}
+{{- fail "edge.cache.maxObjectBytes must not exceed edge.cache.l1MaxBytes: a single object would evict the whole tier" }}
+{{- end }}
+
+{{- if lt (int .Values.edge.cache.replicationFactor) 1 }}
+{{- fail "edge.cache.replicationFactor must be at least 1" }}
+{{- end }}
+
+{{- if gt (int .Values.edge.cache.replicationFactor) (int .Values.edge.replicaCount) }}
+{{- fail (printf "edge.cache.replicationFactor (%d) cannot exceed edge.replicaCount (%d): there are not enough nodes to hold that many distinct replicas" (int .Values.edge.cache.replicationFactor) (int .Values.edge.replicaCount)) }}
+{{- end }}
+
+{{- if eq .Values.mode "production" }}
+  {{- if not .Values.security.mtls.enabled }}
+  {{- fail "mode=production requires security.mtls.enabled=true: internal RPCs must not run in plaintext" }}
+  {{- end }}
+  {{- if not .Values.adminAuth.enabled }}
+  {{- fail "mode=production requires adminAuth.enabled=true: an unauthenticated admin API can rewrite all routing" }}
+  {{- end }}
+  {{- if .Values.telemetry.enablePprof }}
+  {{- fail "mode=production forbids telemetry.enablePprof: the telemetry listener is unauthenticated" }}
+  {{- end }}
+  {{- if and .Values.edge.originSecurity.allowPrivateNetworks (not .Values.edge.originSecurity.allowedCIDRs) }}
+  {{- fail "mode=production requires edge.originSecurity.allowedCIDRs when allowPrivateNetworks is enabled: name the exact networks rather than opening a whole class" }}
+  {{- end }}
+{{- end }}
+
+{{- if and .Values.adminAuth.enabled (not .Values.adminAuth.existingSecret) }}
+{{- fail "adminAuth.enabled requires adminAuth.existingSecret: the token is read from a secret, never templated into a ConfigMap" }}
+{{- end }}

@@ -1,0 +1,23 @@
+{{- if .Values.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "edgemesh.fullname" . }}
+  labels:
+    {{- include "edgemesh.labels" . | nindent 4 }}
+    {{- with .Values.serviceMonitor.labels }}{{- toYaml . | nindent 4 }}{{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "edgemesh.selectorLabels" . | nindent 6 }}
+  namespaceSelector:
+    matchNames: [{{ .Release.Namespace }}]
+  endpoints:
+    - port: telemetry
+      path: /metrics
+      interval: {{ .Values.serviceMonitor.interval }}
+      relabelings:
+        # Every dashboard groups by node_id, which is the pod name.
+        - sourceLabels: [__meta_kubernetes_pod_name]
+          targetLabel: node_id
+{{- end }}

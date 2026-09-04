@@ -1,0 +1,210 @@
+{{- $ctl := include "edgemesh.controlFullname" . -}}
+{{- $headless := include "edgemesh.controlHeadless" . -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $headless }}
+  labels:
+    {{- include "edgemesh.labels" . | nindent 4 }}
+    app.kubernetes.io/component: control
+spec:
+  # A headless service is what gives each control pod stable DNS, which Raft
+  # needs: a peer address that changes on restart would break the static
+  # membership the cluster is configured with.
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    {{- include "edgemesh.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: control
+  ports:
+    - {name: raft, port: {{ .Values.control.ports.raft }}, targetPort: raft}
+    - {name: admin, port: {{ .Values.control.ports.admin }}, targetPort: admin}
+    - {name: edge, port: {{ .Values.control.ports.edge }}, targetPort: edge}
+    - {name: telemetry, port: {{ .Values.control.ports.telemetry }}, targetPort: telemetry}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $ctl }}
+  labels:
+    {{- include "edgemesh.labels" . | nindent 4 }}
+    app.kubernetes.io/component: control
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "edgemesh.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: control
+  ports:
+    - {name: admin, port: {{ .Values.control.ports.admin }}, targetPort: admin}
+    - {name: telemetry, port: {{ .Values.control.ports.telemetry }}, targetPort: telemetry}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $ctl }}
+  labels:
+    {{- include "edgemesh.labels" . | nindent 4 }}
+    app.kubernetes.io/component: control
+spec:
+  serviceName: {{ $headless }}
+  replicas: {{ .Values.control.replicaCount }}
+  # Parallel start-up matters here: Raft cannot elect a leader until a majority
+  # is running, and OrderedReady would deadlock waiting for readiness that
+  # depends on the peers that have not started yet.
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      {{- include "edgemesh.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: control
+  template:
+    metadata:
+      labels:
+        {{- include "edgemesh.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: control
+        {{- with .Values.podLabels }}{{- toYaml . | nindent 8 }}{{- end }}
+      annotations:
+        # Roll the pods when the configuration changes.
+        checksum/config: {{ include (print $.Template.BasePath "/control-configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}{{- toYaml . | nindent 8 }}{{- end }}
+    spec:
+      serviceAccountName: {{ include "edgemesh.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.control.topologySpreadConstraints.enabled }}
+      topologySpreadConstraints:
+        # Keeping members on separate nodes means one node failure cannot take
+        # a majority with it.
+        - maxSkew: 1
+          topologyKey: {{ .Values.control.topologySpreadConstraints.topologyKey }}
+          whenUnsatisfiable: {{ .Values.control.topologySpreadConstraints.whenUnsatisfiable }}
+          labelSelector:
+            matchLabels:
+              {{- include "edgemesh.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: control
+      {{- end }}
+      {{- with .Values.control.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.control.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.control.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        # The node id and advertised addresses depend on the pod's ordinal,
+        # which is only known at runtime. Rendering the config here keeps one
+        # ConfigMap for the whole StatefulSet.
+        - name: render-config
+          image: busybox:1.37
+          command: [sh, -c]
+          args:
+            - |
+              set -eu
+              FQDN="${POD_NAME}.{{ $headless }}.${POD_NAMESPACE}.svc.cluster.local"
+              sed -e "s/__NODE_ID__/${POD_NAME}/g" \
+                  -e "s/__POD_FQDN__/${FQDN}/g" \
+                  /etc/edgemesh/tmpl/control.yaml.tmpl > /etc/edgemesh/rendered/control.yaml
+              echo "rendered configuration for ${POD_NAME}:"
+              cat /etc/edgemesh/rendered/control.yaml
+          env:
+            - name: POD_NAME
+              valueFrom: {fieldRef: {fieldPath: metadata.name}}
+            - name: POD_NAMESPACE
+              valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          volumeMounts:
+            - {name: config-template, mountPath: /etc/edgemesh/tmpl}
+            - {name: config, mountPath: /etc/edgemesh/rendered}
+      containers:
+        - name: control
+          image: {{ include "edgemesh.image" (dict "root" $ "spec" .Values.image.control) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["--config", "/etc/edgemesh/rendered/control.yaml"]
+          ports:
+            - {name: raft, containerPort: {{ .Values.control.ports.raft }}}
+            - {name: admin, containerPort: {{ .Values.control.ports.admin }}}
+            - {name: edge, containerPort: {{ .Values.control.ports.edge }}}
+            - {name: telemetry, containerPort: {{ .Values.control.ports.telemetry }}}
+          # Liveness must not depend on Raft state: restarting a follower
+          # because it cannot reach a quorum would turn a partial outage into
+          # a total one.
+          livenessProbe:
+            httpGet: {path: /healthz, port: telemetry}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 6
+          readinessProbe:
+            httpGet: {path: /readyz, port: telemetry}
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            httpGet: {path: /healthz, port: telemetry}
+            periodSeconds: 2
+            failureThreshold: 30
+          resources:
+            {{- toYaml .Values.control.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          volumeMounts:
+            - {name: config, mountPath: /etc/edgemesh/rendered}
+            - {name: data, mountPath: /var/lib/edgemesh}
+            {{- if .Values.security.mtls.enabled }}
+            - {name: tls, mountPath: /etc/edgemesh/tls, readOnly: true}
+            {{- end }}
+            {{- if .Values.adminAuth.enabled }}
+            - {name: admin-auth, mountPath: /etc/edgemesh/auth, readOnly: true}
+            {{- end }}
+      volumes:
+        - name: config-template
+          configMap: {name: {{ $ctl }}}
+        - name: config
+          emptyDir: {}
+        {{- if .Values.security.mtls.enabled }}
+        - name: tls
+          secret: {secretName: {{ .Values.security.mtls.secretName }}}
+        {{- end }}
+        {{- if .Values.adminAuth.enabled }}
+        - name: admin-auth
+          secret: {secretName: {{ .Values.adminAuth.existingSecret }}}
+        {{- end }}
+        {{- if not .Values.control.persistence.enabled }}
+        - name: data
+          emptyDir: {}
+        {{- end }}
+  {{- if .Values.control.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: {{- toYaml .Values.control.persistence.accessModes | nindent 10 }}
+        {{- if .Values.control.persistence.storageClass }}
+        storageClassName: {{ .Values.control.persistence.storageClass }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.control.persistence.size }}
+  {{- end }}
+{{- if .Values.control.podDisruptionBudget.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $ctl }}
+  labels:
+    {{- include "edgemesh.labels" . | nindent 4 }}
+    app.kubernetes.io/component: control
+spec:
+  # Voluntary disruption must never remove a quorum: with three members,
+  # evicting two at once makes the cluster unwritable.
+  maxUnavailable: {{ .Values.control.podDisruptionBudget.maxUnavailable }}
+  selector:
+    matchLabels:
+      {{- include "edgemesh.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: control
+{{- end }}

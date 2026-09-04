@@ -1,0 +1,66 @@
+{{- $edge := include "edgemesh.edgeFullname" . -}}
+{{- $edgeHeadless := printf "%s-headless" $edge -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $edge }}
+  labels:
+    {{- include "edgemesh.labels" . | nindent 4 }}
+    app.kubernetes.io/component: edge
+data:
+  edge.yaml.tmpl: |
+    mode: {{ .Values.mode }}
+
+    node:
+      id: __NODE_ID__
+      region: __REGION__
+      zone: __ZONE__
+      public_address: 0.0.0.0:{{ .Values.edge.ports.public }}
+      peer_address: 0.0.0.0:{{ .Values.edge.ports.peer }}
+      # Peers dial this address directly, so it must be the pod's own DNS name
+      # rather than the load-balanced service: a peer-cache request has to reach
+      # one specific node, not any node.
+      advertise_peer_address: __POD_FQDN__:{{ .Values.edge.ports.peer }}
+      advertise_public_address: __POD_FQDN__:{{ .Values.edge.ports.public }}
+      weight: 1
+
+    control_plane:
+      endpoints:
+      {{- include "edgemesh.controlEndpoints" . | nindent 4 }}
+      heartbeat_interval: 2s
+      reconnect_backoff_min: 250ms
+      reconnect_backoff_max: 5s
+
+    cache:
+      l1_max_bytes: {{ .Values.edge.cache.l1MaxBytes }}
+      l2_max_bytes: {{ .Values.edge.cache.l2MaxBytes }}
+      max_object_bytes: {{ .Values.edge.cache.maxObjectBytes }}
+      shards: {{ .Values.edge.cache.shards }}
+      replication_factor: {{ .Values.edge.cache.replicationFactor }}
+      cleanup_interval: {{ .Values.edge.cache.cleanupInterval }}
+      policy: {{ .Values.edge.cache.policy }}
+      replication_queue: {{ .Values.edge.cache.replicationQueue }}
+      replication_workers: {{ .Values.edge.cache.replicationWorkers }}
+      replication_timeout: {{ .Values.edge.cache.replicationTimeout }}
+
+    proxy:
+      request_timeout: {{ .Values.edge.proxy.requestTimeout }}
+      read_header_timeout: {{ .Values.edge.proxy.readHeaderTimeout }}
+      idle_timeout: {{ .Values.edge.proxy.idleTimeout }}
+      max_header_bytes: {{ .Values.edge.proxy.maxHeaderBytes }}
+      drain_timeout: {{ .Values.edge.proxy.drainTimeout }}
+      max_concurrent_requests: {{ .Values.edge.proxy.maxConcurrentRequests }}
+      trusted_proxy_cidrs: {{ toJson .Values.edge.proxy.trustedProxyCIDRs }}
+      propagate_trace_to_origin: {{ .Values.edge.proxy.propagateTraceToOrigin }}
+
+    {{- include "edgemesh.securityConfig" . | nindent 4 }}
+
+    origin_security:
+      allow_loopback: {{ .Values.edge.originSecurity.allowLoopback }}
+      allow_private_networks: {{ .Values.edge.originSecurity.allowPrivateNetworks }}
+      allowed_cidrs: {{ toJson .Values.edge.originSecurity.allowedCIDRs }}
+      denied_cidrs: {{ toJson .Values.edge.originSecurity.deniedCIDRs }}
+
+    peer_rpc_timeout: 10s
+
+    {{- include "edgemesh.telemetryConfig" (dict "root" . "port" .Values.edge.ports.telemetry) | nindent 4 }}

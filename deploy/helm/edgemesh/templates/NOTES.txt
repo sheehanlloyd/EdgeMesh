@@ -1,0 +1,40 @@
+EdgeMesh {{ .Chart.AppVersion }} is installed as {{ .Release.Name }}.
+
+  mode                {{ .Values.mode }}
+  control replicas    {{ .Values.control.replicaCount }} (Raft, static membership)
+  edge replicas       {{ .Values.edge.replicaCount }}
+  mTLS                {{ if .Values.security.mtls.enabled }}enabled{{ else }}DISABLED{{ end }}
+  admin auth          {{ if .Values.adminAuth.enabled }}enabled{{ else }}DISABLED{{ end }}
+
+1. Wait for the control plane to elect a leader:
+
+     kubectl -n {{ .Release.Namespace }} rollout status statefulset/{{ include "edgemesh.controlFullname" . }}
+
+2. Reach the admin API:
+
+     kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "edgemesh.controlFullname" . }} 7100:{{ .Values.control.ports.admin }}
+     edgemeshctl status --server http://127.0.0.1:7100
+
+3. Send traffic through an edge:
+
+     kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "edgemesh.edgeFullname" . }} 8080:{{ .Values.edge.service.port }}
+     curl -H 'Host: demo.edgemesh.local' http://127.0.0.1:8080/static/hello
+
+4. Watch the cache work:
+
+     curl -sD- -H 'Host: demo.edgemesh.local' http://127.0.0.1:8080/counter/demo | grep -i x-edgemesh-cache
+
+{{- if eq .Values.mode "development" }}
+
+WARNING: this release runs in development mode.
+{{- if not .Values.security.mtls.enabled }}
+  - Internal RPCs (Raft, edge-control, peer-cache) are UNENCRYPTED and
+    UNAUTHENTICATED. Anyone who can reach those ports can read cached objects
+    and replicate configuration.
+{{- end }}
+{{- if not .Values.adminAuth.enabled }}
+  - The admin API is UNAUTHENTICATED. Anyone who can reach it can rewrite every
+    route in the cluster.
+{{- end }}
+  Set mode=production to have the chart refuse these combinations.
+{{- end }}

@@ -1,0 +1,235 @@
+{{- $edge := include "edgemesh.edgeFullname" . -}}
+{{- $edgeHeadless := printf "%s-headless" $edge -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $edgeHeadless }}
+  labels:
+    {{- include "edgemesh.labels" . | nindent 4 }}
+    app.kubernetes.io/component: edge
+spec:
+  # Peer-cache RPCs address one specific node, so the edges need per-pod DNS in
+  # addition to the load-balanced public service.
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    {{- include "edgemesh.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: edge
+  ports:
+    - {name: peer, port: {{ .Values.edge.ports.peer }}, targetPort: peer}
+    - {name: public, port: {{ .Values.edge.ports.public }}, targetPort: public}
+    - {name: telemetry, port: {{ .Values.edge.ports.telemetry }}, targetPort: telemetry}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $edge }}
+  labels:
+    {{- include "edgemesh.labels" . | nindent 4 }}
+    app.kubernetes.io/component: edge
+  {{- with .Values.edge.service.annotations }}
+  annotations: {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.edge.service.type }}
+  selector:
+    {{- include "edgemesh.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: edge
+  ports:
+    - name: http
+      port: {{ .Values.edge.service.port }}
+      targetPort: public
+    - name: telemetry
+      port: {{ .Values.edge.ports.telemetry }}
+      targetPort: telemetry
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $edge }}
+  labels:
+    {{- include "edgemesh.labels" . | nindent 4 }}
+    app.kubernetes.io/component: edge
+spec:
+  # A StatefulSet rather than a Deployment: each edge needs a stable identity
+  # and stable DNS so its ring position and peer address survive a restart. A
+  # Deployment's random pod names would reshuffle cache ownership on every roll.
+  serviceName: {{ $edgeHeadless }}
+  {{- if not .Values.edge.autoscaling.enabled }}
+  replicas: {{ .Values.edge.replicaCount }}
+  {{- end }}
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      {{- include "edgemesh.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: edge
+  template:
+    metadata:
+      labels:
+        {{- include "edgemesh.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: edge
+        {{- with .Values.podLabels }}{{- toYaml . | nindent 8 }}{{- end }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/edge-configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}{{- toYaml . | nindent 8 }}{{- end }}
+    spec:
+      serviceAccountName: {{ include "edgemesh.serviceAccountName" . }}
+      # Long enough for the configured drain to finish, so a rolling update
+      # exercises the graceful path rather than dropping in-flight requests.
+      terminationGracePeriodSeconds: 40
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.edge.topologySpreadConstraints.enabled }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: {{ .Values.edge.topologySpreadConstraints.topologyKey }}
+          whenUnsatisfiable: {{ .Values.edge.topologySpreadConstraints.whenUnsatisfiable }}
+          labelSelector:
+            matchLabels:
+              {{- include "edgemesh.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: edge
+      {{- end }}
+      {{- with .Values.edge.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.edge.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.edge.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        - name: render-config
+          image: busybox:1.37
+          command: [sh, -c]
+          args:
+            - |
+              set -eu
+              FQDN="${POD_NAME}.{{ $edgeHeadless }}.${POD_NAMESPACE}.svc.cluster.local"
+              sed -e "s/__NODE_ID__/${POD_NAME}/g" \
+                  -e "s/__POD_FQDN__/${FQDN}/g" \
+                  -e "s/__REGION__/${NODE_REGION:-unknown}/g" \
+                  -e "s/__ZONE__/${NODE_ZONE:-unknown}/g" \
+                  /etc/edgemesh/tmpl/edge.yaml.tmpl > /etc/edgemesh/rendered/edge.yaml
+              cat /etc/edgemesh/rendered/edge.yaml
+          env:
+            - name: POD_NAME
+              valueFrom: {fieldRef: {fieldPath: metadata.name}}
+            - name: POD_NAMESPACE
+              valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
+            - name: NODE_REGION
+              value: {{ .Release.Namespace | quote }}
+            - name: NODE_ZONE
+              value: {{ .Release.Namespace | quote }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          volumeMounts:
+            - {name: config-template, mountPath: /etc/edgemesh/tmpl}
+            - {name: config, mountPath: /etc/edgemesh/rendered}
+      containers:
+        - name: edge
+          image: {{ include "edgemesh.image" (dict "root" $ "spec" .Values.image.edge) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["--config", "/etc/edgemesh/rendered/edge.yaml"]
+          ports:
+            - {name: public, containerPort: {{ .Values.edge.ports.public }}}
+            - {name: peer, containerPort: {{ .Values.edge.ports.peer }}}
+            - {name: telemetry, containerPort: {{ .Values.edge.ports.telemetry }}}
+          livenessProbe:
+            httpGet: {path: /healthz, port: telemetry}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 6
+          # Readiness deliberately does not require control-plane connectivity:
+          # an edge holding a valid configuration snapshot can serve every
+          # request it could a moment ago, and marking it unready would turn a
+          # control-plane outage into a data-plane outage.
+          readinessProbe:
+            httpGet: {path: /readyz, port: telemetry}
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            httpGet: {path: /healthz, port: telemetry}
+            periodSeconds: 2
+            failureThreshold: 30
+          lifecycle:
+            preStop:
+              # A brief pause lets the endpoints controller remove this pod
+              # before it stops accepting connections, so in-flight routing
+              # decisions are not made against a draining node.
+              exec:
+                command: [sleep, "5"]
+          resources:
+            {{- toYaml .Values.edge.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          volumeMounts:
+            - {name: config, mountPath: /etc/edgemesh/rendered}
+            {{- if .Values.security.mtls.enabled }}
+            - {name: tls, mountPath: /etc/edgemesh/tls, readOnly: true}
+            {{- end }}
+      volumes:
+        - name: config-template
+          configMap: {name: {{ $edge }}}
+        - name: config
+          emptyDir: {}
+        {{- if .Values.security.mtls.enabled }}
+        - name: tls
+          secret: {secretName: {{ .Values.security.mtls.secretName }}}
+        {{- end }}
+{{- if .Values.edge.podDisruptionBudget.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $edge }}
+  labels:
+    {{- include "edgemesh.labels" . | nindent 4 }}
+    app.kubernetes.io/component: edge
+spec:
+  maxUnavailable: {{ .Values.edge.podDisruptionBudget.maxUnavailable }}
+  selector:
+    matchLabels:
+      {{- include "edgemesh.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: edge
+{{- end }}
+{{- if .Values.edge.autoscaling.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ $edge }}
+  labels:
+    {{- include "edgemesh.labels" . | nindent 4 }}
+    app.kubernetes.io/component: edge
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet
+    name: {{ $edge }}
+  minReplicas: {{ .Values.edge.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.edge.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.edge.autoscaling.targetCPUUtilizationPercentage }}
+  behavior:
+    scaleDown:
+      # Scaling an edge out or in remaps part of the keyspace, so the window is
+      # deliberately long: rapid flapping would churn cache ownership and
+      # depress the hit ratio far more than the saved capacity is worth.
+      stabilizationWindowSeconds: 300
+      policies:
+        - {type: Pods, value: 1, periodSeconds: 120}
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - {type: Pods, value: 2, periodSeconds: 60}
+{{- end }}

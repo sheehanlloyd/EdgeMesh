@@ -1,0 +1,21 @@
+apiVersion: v2
+name: edgemesh
+description: |
+  EdgeMesh: a distributed edge proxy and cache with a custom Raft control
+  plane, consistent-hash peer caching, and OpenTelemetry instrumentation.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - proxy
+  - cache
+  - raft
+  - consistent-hashing
+  - edge
+home: https://github.com/sheehanlloyd/edgemesh
+sources:
+  - https://github.com/sheehanlloyd/edgemesh
+maintainers:
+  - name: EdgeMesh
+annotations:
+  category: Networking
