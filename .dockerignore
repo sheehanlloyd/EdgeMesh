@@ -1,0 +1,13 @@
+# Keep build context small and free of local state.
+.git
+.data
+bin
+*.log
+coverage.out
+EdgeMesh_PRD.docx
+docs/assets
+deploy/terraform/aws/.terraform
+**/.terraform
+**/*.tfstate*
+certs
+.env

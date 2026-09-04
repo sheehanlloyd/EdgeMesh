@@ -1,0 +1,207 @@
+# EdgeMesh local topology: 3 control nodes, 3 edges, 2 origins, and the
+# observability stack.
+#
+# This is the environment the demo and the chaos scripts drive. It runs entirely
+# on a laptop and requires no cloud access.
+
+name: edgemesh
+
+x-control-common: &control-common
+  build:
+    context: ../..
+    dockerfile: Dockerfile.control
+    args:
+      VERSION: ${EDGEMESH_VERSION:-dev}
+  restart: unless-stopped
+  networks: [edgemesh]
+  # The control plane must not be killed for being slow to start: Raft needs a
+  # quorum before it can answer readiness at all.
+  stop_grace_period: 30s
+
+x-edge-common: &edge-common
+  build:
+    context: ../..
+    dockerfile: Dockerfile.edge
+    args:
+      VERSION: ${EDGEMESH_VERSION:-dev}
+  restart: unless-stopped
+  networks: [edgemesh]
+  # Long enough for the drain timeout to complete, so a stop exercises the
+  # graceful path rather than a kill.
+  stop_grace_period: 30s
+
+services:
+  # ---- control plane ------------------------------------------------------
+  cp-1:
+    <<: *control-common
+    container_name: edgemesh-cp-1
+    command: ["--config", "/etc/edgemesh/control.yaml"]
+    volumes:
+      - ./configs/control-1.yaml:/etc/edgemesh/control.yaml:ro
+      - cp1-data:/var/lib/edgemesh
+    ports:
+      - "7101:7100"   # admin API
+      - "9101:9100"   # metrics
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/control", "--version"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  cp-2:
+    <<: *control-common
+    container_name: edgemesh-cp-2
+    command: ["--config", "/etc/edgemesh/control.yaml"]
+    volumes:
+      - ./configs/control-2.yaml:/etc/edgemesh/control.yaml:ro
+      - cp2-data:/var/lib/edgemesh
+    ports:
+      - "7102:7100"
+      - "9102:9100"
+
+  cp-3:
+    <<: *control-common
+    container_name: edgemesh-cp-3
+    command: ["--config", "/etc/edgemesh/control.yaml"]
+    volumes:
+      - ./configs/control-3.yaml:/etc/edgemesh/control.yaml:ro
+      - cp3-data:/var/lib/edgemesh
+    ports:
+      - "7103:7100"
+      - "9103:9100"
+
+  # ---- edge plane ---------------------------------------------------------
+  edge-1:
+    <<: *edge-common
+    container_name: edgemesh-edge-1
+    command: ["--config", "/etc/edgemesh/edge.yaml"]
+    volumes:
+      - ./configs/edge-1.yaml:/etc/edgemesh/edge.yaml:ro
+    ports:
+      - "8081:8080"   # public proxy
+      - "9201:9200"   # metrics
+    depends_on: [cp-1, cp-2, cp-3, origin-1, origin-2]
+
+  edge-2:
+    <<: *edge-common
+    container_name: edgemesh-edge-2
+    command: ["--config", "/etc/edgemesh/edge.yaml"]
+    volumes:
+      - ./configs/edge-2.yaml:/etc/edgemesh/edge.yaml:ro
+    ports:
+      - "8082:8080"
+      - "9202:9200"
+    depends_on: [cp-1, cp-2, cp-3, origin-1, origin-2]
+
+  edge-3:
+    <<: *edge-common
+    container_name: edgemesh-edge-3
+    command: ["--config", "/etc/edgemesh/edge.yaml"]
+    volumes:
+      - ./configs/edge-3.yaml:/etc/edgemesh/edge.yaml:ro
+    ports:
+      - "8083:8080"
+      - "9203:9200"
+    depends_on: [cp-1, cp-2, cp-3, origin-1, origin-2]
+
+  # ---- origins ------------------------------------------------------------
+  origin-1:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.origin
+      args:
+        VERSION: ${EDGEMESH_VERSION:-dev}
+    container_name: edgemesh-origin-1
+    command: ["--addr", "0.0.0.0:9000", "--id", "origin-1"]
+    networks: [edgemesh]
+    ports:
+      - "9001:9000"
+    restart: unless-stopped
+
+  origin-2:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.origin
+      args:
+        VERSION: ${EDGEMESH_VERSION:-dev}
+    container_name: edgemesh-origin-2
+    command: ["--addr", "0.0.0.0:9000", "--id", "origin-2"]
+    networks: [edgemesh]
+    ports:
+      - "9002:9000"
+    restart: unless-stopped
+
+  # ---- observability ------------------------------------------------------
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.115.1
+    container_name: edgemesh-otel
+    command: ["--config=/etc/otel/config.yaml"]
+    volumes:
+      - ./otel/config.yaml:/etc/otel/config.yaml:ro
+    networks: [edgemesh]
+    ports:
+      - "4317:4317"   # OTLP gRPC
+    depends_on: [jaeger]
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.62.0
+    container_name: edgemesh-jaeger
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    networks: [edgemesh]
+    ports:
+      - "16686:16686" # trace UI
+
+  prometheus:
+    image: prom/prometheus:v3.0.1
+    container_name: edgemesh-prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yaml
+      - --storage.tsdb.retention.time=6h
+      - --web.enable-lifecycle
+    volumes:
+      - ./prometheus/prometheus.yaml:/etc/prometheus/prometheus.yaml:ro
+    networks: [edgemesh]
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    container_name: edgemesh-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      # This is a throwaway local instance; disabling the update check keeps it
+      # from calling out to the internet on every start.
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    networks: [edgemesh]
+    ports:
+      - "3000:3000"
+    depends_on: [prometheus]
+
+  # ---- fault injection ----------------------------------------------------
+  # Toxiproxy sits between the edges and one origin so latency and packet loss
+  # can be injected without changing any EdgeMesh configuration.
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.11.0
+    container_name: edgemesh-toxiproxy
+    networks: [edgemesh]
+    ports:
+      - "8474:8474"   # Toxiproxy control API
+      - "9003:9003"   # proxied origin-1
+    restart: unless-stopped
+
+networks:
+  edgemesh:
+    driver: bridge
+
+volumes:
+  cp1-data:
+  cp2-data:
+  cp3-data:

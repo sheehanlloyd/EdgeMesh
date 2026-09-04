@@ -1,0 +1,45 @@
+# cp-2 inside Docker Compose. Every control node uses identical ports and is
+# addressed by its service name, which is what makes the port-offset convention
+# (admin = raft + 100, edge = raft + 300) work uniformly.
+mode: development
+
+node:
+  id: cp-2
+  raft_address: 0.0.0.0:7000
+  admin_address: 0.0.0.0:7100
+  edge_address: 0.0.0.0:7300
+  advertise_admin_address: cp-2:7100
+  advertise_edge_address: cp-2:7300
+
+raft:
+  peers:
+    - {id: cp-1, address: cp-1:7000}
+    - {id: cp-2, address: cp-2:7000}
+    - {id: cp-3, address: cp-3:7000}
+  election_timeout_min: 500ms
+  election_timeout_max: 900ms
+  heartbeat_interval: 150ms
+  snapshot_entries: 1000
+  pre_vote: true
+  data_dir: /var/lib/edgemesh
+
+security:
+  enabled: false
+
+admin_auth:
+  enabled: false
+
+membership:
+  heartbeat_interval: 2s
+  suspect_after_missed: 2
+  dead_after_missed: 3
+  sweep_interval: 1s
+
+telemetry:
+  address: 0.0.0.0:9100
+  otlp_endpoint: otel-collector:4317
+  otlp_insecure: true
+  trace_sample_ratio: 1.0
+  log_level: info
+  log_format: json
+  enable_pprof: true

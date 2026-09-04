@@ -1,0 +1,58 @@
+# edge-3 inside Docker Compose.
+mode: development
+
+node:
+  id: edge-3
+  region: local-a
+  zone: local-a3
+  public_address: 0.0.0.0:8080
+  peer_address: 0.0.0.0:7200
+  advertise_peer_address: edge-3:7200
+  advertise_public_address: edge-3:8080
+  weight: 1
+
+control_plane:
+  endpoints: [cp-1:7300, cp-2:7300, cp-3:7300]
+  heartbeat_interval: 2s
+  reconnect_backoff_min: 250ms
+  reconnect_backoff_max: 5s
+
+cache:
+  l1_max_bytes: 268435456
+  l2_max_bytes: 536870912
+  max_object_bytes: 8388608
+  shards: 64
+  replication_factor: 2
+  cleanup_interval: 30s
+  policy: lru
+  replication_queue: 1024
+  replication_workers: 4
+  replication_timeout: 5s
+
+proxy:
+  request_timeout: 15s
+  read_header_timeout: 5s
+  idle_timeout: 60s
+  max_header_bytes: 1048576
+  drain_timeout: 20s
+  max_concurrent_requests: 4096
+  trusted_proxy_cidrs: []
+  propagate_trace_to_origin: true
+
+security:
+  enabled: false
+
+origin_security:
+  allow_loopback: true
+  allow_private_networks: true
+
+peer_rpc_timeout: 10s
+
+telemetry:
+  address: 0.0.0.0:9200
+  otlp_endpoint: otel-collector:4317
+  otlp_insecure: true
+  trace_sample_ratio: 1.0
+  log_level: info
+  log_format: json
+  enable_pprof: true
