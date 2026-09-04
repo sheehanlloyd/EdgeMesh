@@ -1,0 +1,75 @@
+# A route exercising every policy EdgeMesh supports.
+id: api-route
+hostname: api.edgemesh.local
+path_prefix: /v1
+origin_pool_id: api-pool
+enabled: true
+
+cache_policy:
+  enabled: true
+  default_ttl_seconds: 30
+  max_ttl_seconds: 300
+
+  # Only 200 is cacheable by default. Adding statuses here is a deliberate act:
+  # caching a 3xx or a 4xx affects correctness, not just hit ratio.
+  cacheable_statuses: [200, 203]
+
+  # Requests carrying any cookie bypass the cache unless every cookie name is
+  # listed here. A cookie usually implies a personalized response.
+  allowed_cookies: [lang, theme]
+
+  # Fold these request headers into the cache key, in addition to whatever the
+  # origin declares in Vary.
+  vary_headers: [Accept-Encoding]
+
+  # Sort query parameters before keying. Only safe when the origin is known to
+  # be order-insensitive: parameter order can be semantically meaningful.
+  canonical_query: false
+
+  # Serve a stale object while an asynchronous refresh runs.
+  stale_while_revalidate_seconds: 30
+
+  # Remember selected error statuses briefly, so a failing origin is not
+  # hammered. The TTL is deliberately short.
+  negative_caching: true
+  negative_ttl_seconds: 5
+
+  # Storing a Set-Cookie response would hand one client's session to the next
+  # requester. Leave this false unless the cookie is genuinely not per-user.
+  allow_set_cookie: false
+
+rate_limit_policy:
+  enabled: true
+  rate_per_second: 100
+  burst: 200
+  # global | client_ip | header. Limits are node-local: with N edges the
+  # effective ceiling is up to N times this rate.
+  key_strategy: KEY_STRATEGY_CLIENT_IP
+
+retry_policy:
+  enabled: true
+  max_retries: 2
+  # Only statuses that mean "this origin could not serve the request". Never a
+  # 4xx, which the client caused and a retry will not fix.
+  retry_on_statuses: [502, 503, 504]
+  backoff_base_ms: 25
+  backoff_max_ms: 250
+
+timeout_policy:
+  connect_ms: 3000
+  response_header_ms: 5000
+  request_ms: 15000
+
+header_policy:
+  # Send the client's Host rather than rewriting it to the origin's. Needed by
+  # origins that serve by virtual host.
+  preserve_host: true
+  request_set:
+    X-Served-By: edgemesh
+  request_remove:
+    - X-Internal-Debug
+  response_set:
+    X-Frame-Options: DENY
+  response_remove:
+    - Server
+  diagnostic_headers: false

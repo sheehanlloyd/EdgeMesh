@@ -1,0 +1,15 @@
+# Cluster-wide settings.
+#
+# Apply with:
+#   edgemeshctl settings apply -f configs/examples/settings.yaml
+
+# Owner plus successors for each cache key. Cannot exceed the live edge count.
+replication_factor: 2
+
+# Ring positions per physical edge. More positions means a more even
+# distribution at the cost of ring construction time: the standard deviation of
+# a node's share falls as roughly 1/sqrt(this value).
+ring_virtual_nodes: 128
+
+# Responses larger than this are streamed through without being cached.
+max_object_bytes: 8388608

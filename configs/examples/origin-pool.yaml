@@ -1,0 +1,32 @@
+# An origin pool with active health checking.
+#
+# Apply with:
+#   edgemeshctl origins apply -f configs/examples/origin-pool.yaml
+id: demo-pool
+
+# round_robin is required in V1; weighted_round_robin is also implemented.
+load_balancing: LOAD_BALANCING_ROUND_ROBIN
+
+health_interval_ms: 2000
+health_timeout_ms: 1000
+# Consecutive failures before an origin is excluded from selection.
+unhealthy_threshold: 2
+# Consecutive successes before it returns.
+healthy_threshold: 1
+
+origins:
+  - id: origin-1
+    scheme: http          # http or https only; no file:// or unix sockets
+    host: origin-1
+    port: 9000
+    weight: 1
+    health_path: /healthz
+    expected_statuses: [200]
+
+  - id: origin-2
+    scheme: http
+    host: origin-2
+    port: 9000
+    weight: 1
+    health_path: /healthz
+    expected_statuses: [200]
