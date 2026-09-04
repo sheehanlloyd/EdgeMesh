@@ -1,0 +1,38 @@
+# OpenTelemetry Collector configuration for the local topology.
+#
+# The collector receives OTLP from every EdgeMesh process and forwards traces to
+# Jaeger. Batching is what keeps export off the request path.
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+processors:
+  batch:
+    timeout: 5s
+    send_batch_size: 512
+  # A hard memory ceiling so a trace burst cannot take the collector down and
+  # with it the rest of the local stack.
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 256
+    spike_limit_mib: 64
+
+exporters:
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+  debug:
+    verbosity: basic
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlp/jaeger]
+  telemetry:
+    logs:
+      level: warn

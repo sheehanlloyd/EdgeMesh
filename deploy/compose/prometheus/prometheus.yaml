@@ -1,0 +1,31 @@
+# Prometheus scrape configuration for the local EdgeMesh topology.
+global:
+  scrape_interval: 5s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: edgemesh-local
+
+scrape_configs:
+  - job_name: edgemesh-control
+    static_configs:
+      - targets: [cp-1:9100, cp-2:9100, cp-3:9100]
+    relabel_configs:
+      # The instance label carries the node id, which is what every dashboard
+      # groups by.
+      - source_labels: [__address__]
+        regex: '([^:]+):.*'
+        target_label: node_id
+        replacement: '$1'
+
+  - job_name: edgemesh-edge
+    static_configs:
+      - targets: [edge-1:9200, edge-2:9200, edge-3:9200]
+    relabel_configs:
+      - source_labels: [__address__]
+        regex: '([^:]+):.*'
+        target_label: node_id
+        replacement: '$1'
+
+  - job_name: prometheus
+    static_configs:
+      - targets: [localhost:9090]
