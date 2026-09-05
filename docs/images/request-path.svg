@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 400" width="900" height="400" font-family="ui-sans-serif, -apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+  <title>The request path: L1 lookup, then the consistent-hash owner over the peer cache, then the origin. Four requests across three edges cost one origin fetch.</title>
+  <rect x="0" y="0" width="900" height="400" rx="10" fill="#ffffff" stroke="#d0d7de"/>
+  <defs>
+    <marker id="r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#6e7781"/>
+    </marker>
+  </defs>
+
+  <text x="30" y="34" font-size="14" font-weight="700" fill="#1f2328">One request, four places it can be answered</text>
+
+  <!-- lane -->
+  <g>
+    <rect x="30" y="58" width="120" height="58" rx="8" fill="#eef2f6" stroke="#afb8c1"/>
+    <text x="90" y="83" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1f2328">Client</text>
+    <text x="90" y="101" text-anchor="middle" font-size="11" fill="#57606a">Host + path</text>
+
+    <rect x="200" y="58" width="140" height="58" rx="8" fill="#eff6ff" stroke="#0969da"/>
+    <text x="270" y="83" text-anchor="middle" font-size="12.5" font-weight="600" fill="#0a3069">Ingress edge</text>
+    <text x="270" y="101" text-anchor="middle" font-size="11" fill="#57606a">route match, key</text>
+
+    <rect x="390" y="58" width="140" height="58" rx="8" fill="#eff6ff" stroke="#0969da"/>
+    <text x="460" y="83" text-anchor="middle" font-size="12.5" font-weight="600" fill="#0a3069">L1 (local)</text>
+    <text x="460" y="101" text-anchor="middle" font-size="11" fill="#57606a">TinyLFU admission</text>
+
+    <rect x="580" y="58" width="140" height="58" rx="8" fill="#eff6ff" stroke="#0969da"/>
+    <text x="650" y="83" text-anchor="middle" font-size="12.5" font-weight="600" fill="#0a3069">L2 owner</text>
+    <text x="650" y="101" text-anchor="middle" font-size="11" fill="#57606a">ring lookup, peer RPC</text>
+
+    <rect x="770" y="58" width="100" height="58" rx="8" fill="#eefbf1" stroke="#1a7f37"/>
+    <text x="820" y="83" text-anchor="middle" font-size="12.5" font-weight="600" fill="#0f5323">Origin</text>
+    <text x="820" y="101" text-anchor="middle" font-size="11" fill="#57606a">coalesced</text>
+
+    <line x1="150" y1="87" x2="196" y2="87" stroke="#6e7781" stroke-width="1.6" marker-end="url(#r)"/>
+    <line x1="340" y1="87" x2="386" y2="87" stroke="#6e7781" stroke-width="1.6" marker-end="url(#r)"/>
+    <line x1="530" y1="87" x2="576" y2="87" stroke="#6e7781" stroke-width="1.6" marker-end="url(#r)"/>
+    <line x1="720" y1="87" x2="766" y2="87" stroke="#6e7781" stroke-width="1.6" marker-end="url(#r)"/>
+  </g>
+
+  <!-- outcomes -->
+  <text x="30" y="160" font-size="13" font-weight="700" fill="#1f2328">What the response header says</text>
+
+  <g font-size="12">
+    <rect x="30" y="176" width="840" height="42" rx="8" fill="#f6f8fa" stroke="#d0d7de"/>
+    <rect x="42" y="187" width="86" height="20" rx="4" fill="#fff1e5" stroke="#bc4c00"/>
+    <text x="85" y="201" text-anchor="middle" font-size="11" font-weight="700" fill="#8a3800">MISS</text>
+    <text x="146" y="201" fill="#1f2328">Nothing had it. One origin fetch, and every concurrent waiter for the same key shares it.</text>
+
+    <rect x="30" y="226" width="840" height="42" rx="8" fill="#f6f8fa" stroke="#d0d7de"/>
+    <rect x="42" y="237" width="86" height="20" rx="4" fill="#eefbf1" stroke="#1a7f37"/>
+    <text x="85" y="251" text-anchor="middle" font-size="11" font-weight="700" fill="#0f5323">HIT</text>
+    <text x="146" y="251" fill="#1f2328">Served from this edge's own L1. No network call at all.</text>
+
+    <rect x="30" y="276" width="840" height="42" rx="8" fill="#f6f8fa" stroke="#d0d7de"/>
+    <rect x="42" y="287" width="86" height="20" rx="4" fill="#ddf4ff" stroke="#0969da"/>
+    <text x="85" y="301" text-anchor="middle" font-size="11" font-weight="700" fill="#0a3069">PEER_HIT</text>
+    <text x="146" y="301" fill="#1f2328">Another edge owns this key on the ring and had it. One peer RPC, no origin fetch.</text>
+  </g>
+
+  <rect x="30" y="334" width="840" height="42" rx="8" fill="#f7f3ff" stroke="#8250df"/>
+  <text x="46" y="352" font-size="12" font-weight="700" fill="#5a32a3">Measured</text>
+  <text x="46" y="369" font-size="12" fill="#1f2328">30 concurrent cold requests across 3 edges produce exactly 1 origin fetch. A cold object costs one fetch for the whole fleet, not one per node.</text>
+</svg>

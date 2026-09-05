@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 400" width="900" height="400" font-family="ui-sans-serif, -apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+  <title>Failure domains: with the whole control plane stopped, the data plane served 30 of 30 requests, and it serves every request through a leader kill with no failures.</title>
+  <rect x="0" y="0" width="900" height="400" rx="10" fill="#ffffff" stroke="#d0d7de"/>
+
+  <text x="30" y="36" font-size="14" font-weight="700" fill="#1f2328">The property the project exists to demonstrate</text>
+  <text x="30" y="57" font-size="12" fill="#57606a">Configuration needs consensus. Serving cached bytes does not. So the control plane can fail without the data plane noticing.</text>
+
+  <!-- control plane, down -->
+  <rect x="30" y="82" width="400" height="150" rx="10" fill="#faf0f0" stroke="#cf222e" stroke-dasharray="6 4"/>
+  <text x="230" y="107" text-anchor="middle" font-size="13" font-weight="700" fill="#82071e">CONTROL PLANE &#183; STOPPED</text>
+  <g>
+    <rect x="60" y="122" width="100" height="44" rx="6" fill="#ffffff" stroke="#e5a5a5"/>
+    <text x="110" y="143" text-anchor="middle" font-size="12" font-weight="600" fill="#8c959f">cp-1</text>
+    <text x="110" y="158" text-anchor="middle" font-size="10.5" fill="#cf222e">down</text>
+    <rect x="180" y="122" width="100" height="44" rx="6" fill="#ffffff" stroke="#e5a5a5"/>
+    <text x="230" y="143" text-anchor="middle" font-size="12" font-weight="600" fill="#8c959f">cp-2</text>
+    <text x="230" y="158" text-anchor="middle" font-size="10.5" fill="#cf222e">down</text>
+    <rect x="300" y="122" width="100" height="44" rx="6" fill="#ffffff" stroke="#e5a5a5"/>
+    <text x="350" y="143" text-anchor="middle" font-size="12" font-weight="600" fill="#8c959f">cp-3</text>
+    <text x="350" y="158" text-anchor="middle" font-size="10.5" fill="#cf222e">down</text>
+  </g>
+  <text x="230" y="192" text-anchor="middle" font-size="11.5" fill="#57606a">No admin writes. No config changes.</text>
+  <text x="230" y="211" text-anchor="middle" font-size="11.5" fill="#57606a">Edges keep their last known good snapshot.</text>
+
+  <!-- data plane, up -->
+  <rect x="470" y="82" width="400" height="150" rx="10" fill="#eefbf1" stroke="#1a7f37"/>
+  <text x="670" y="107" text-anchor="middle" font-size="13" font-weight="700" fill="#0f5323">DATA PLANE &#183; SERVING</text>
+  <g>
+    <rect x="500" y="122" width="100" height="44" rx="6" fill="#ffffff" stroke="#9fd8ae"/>
+    <text x="550" y="143" text-anchor="middle" font-size="12" font-weight="600" fill="#1f2328">edge-1</text>
+    <text x="550" y="158" text-anchor="middle" font-size="10.5" fill="#1a7f37">200 OK</text>
+    <rect x="620" y="122" width="100" height="44" rx="6" fill="#ffffff" stroke="#9fd8ae"/>
+    <text x="670" y="143" text-anchor="middle" font-size="12" font-weight="600" fill="#1f2328">edge-2</text>
+    <text x="670" y="158" text-anchor="middle" font-size="10.5" fill="#1a7f37">200 OK</text>
+    <rect x="740" y="122" width="100" height="44" rx="6" fill="#ffffff" stroke="#9fd8ae"/>
+    <text x="790" y="143" text-anchor="middle" font-size="12" font-weight="600" fill="#1f2328">edge-3</text>
+    <text x="790" y="158" text-anchor="middle" font-size="10.5" fill="#1a7f37">200 OK</text>
+  </g>
+  <text x="670" y="192" text-anchor="middle" font-size="11.5" fill="#57606a">Routing, caching, peer fetches, and origin</text>
+  <text x="670" y="211" text-anchor="middle" font-size="11.5" fill="#57606a">fetches all continue unchanged.</text>
+
+  <!-- measurements -->
+  <rect x="30" y="256" width="410" height="112" rx="8" fill="#f6f8fa" stroke="#d0d7de"/>
+  <text x="46" y="280" font-size="12" font-weight="700" fill="#1f2328">Entire control plane stopped</text>
+  <text x="46" y="309" font-size="22" font-weight="700" fill="#0f5323">30 / 30</text>
+  <text x="46" y="330" font-size="11.5" fill="#57606a">data-plane requests succeeded, then 40 / 40</text>
+  <text x="46" y="350" font-size="11" fill="#8c959f">go test ./test/integration/ -run ControlPlaneOutage -v</text>
+
+  <rect x="460" y="256" width="410" height="112" rx="8" fill="#f6f8fa" stroke="#d0d7de"/>
+  <text x="476" y="280" font-size="12" font-weight="700" fill="#1f2328">Raft leader killed mid-traffic</text>
+  <text x="476" y="309" font-size="22" font-weight="700" fill="#0f5323">0 failures</text>
+  <text x="476" y="330" font-size="11.5" fill="#57606a">every request issued during the election was served</text>
+  <text x="476" y="350" font-size="11" fill="#8c959f">go test ./test/integration/ -run LeaderFailover -v</text>
+</svg>

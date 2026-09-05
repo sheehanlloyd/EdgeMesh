@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 660" width="900" height="660" font-family="ui-sans-serif, -apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+  <title>EdgeMesh architecture: admin API into a three-node Raft control plane, which streams configuration to three edge proxies that share a consistent-hash peer cache in front of an origin pool.</title>
+  <rect x="0" y="0" width="900" height="660" rx="10" fill="#ffffff" stroke="#d0d7de"/>
+
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#6e7781"/>
+    </marker>
+    <marker id="ab" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#0969da"/>
+    </marker>
+  </defs>
+
+  <!-- Admin -->
+  <rect x="370" y="24" width="160" height="42" rx="8" fill="#eef2f6" stroke="#afb8c1"/>
+  <text x="450" y="50" text-anchor="middle" font-size="14" font-weight="600" fill="#1f2328">Admin / CLI</text>
+  <line x1="450" y1="66" x2="450" y2="104" stroke="#6e7781" stroke-width="1.6" marker-end="url(#a)"/>
+  <rect x="386" y="74" width="128" height="20" rx="10" fill="#ffffff"/>
+  <text x="450" y="89" text-anchor="middle" font-size="11.5" fill="#57606a">HTTPS / JSON API</text>
+
+  <!-- Control plane -->
+  <rect x="250" y="110" width="400" height="112" rx="10" fill="#f7f3ff" stroke="#8250df"/>
+  <text x="450" y="133" text-anchor="middle" font-size="13" font-weight="700" fill="#5a32a3" letter-spacing="0.6">CONTROL PLANE</text>
+  <g font-size="12.5" font-weight="600" fill="#1f2328">
+    <rect x="278" y="144" width="104" height="34" rx="6" fill="#ffffff" stroke="#c8b8ec"/>
+    <text x="330" y="166" text-anchor="middle">cp-1</text>
+    <rect x="398" y="144" width="104" height="34" rx="6" fill="#ffffff" stroke="#c8b8ec"/>
+    <text x="450" y="166" text-anchor="middle">cp-2</text>
+    <rect x="518" y="144" width="104" height="34" rx="6" fill="#ffffff" stroke="#c8b8ec"/>
+    <text x="570" y="166" text-anchor="middle">cp-3</text>
+  </g>
+  <text x="450" y="199" text-anchor="middle" font-size="12" fill="#5a32a3" font-weight="600">custom Raft consensus</text>
+  <text x="450" y="214" text-anchor="middle" font-size="11.5" fill="#57606a">routes · origin pools · cache policies</text>
+
+  <!-- control to edges -->
+  <line x1="450" y1="222" x2="450" y2="256" stroke="#6e7781" stroke-width="1.6"/>
+  <line x1="170" y1="256" x2="730" y2="256" stroke="#6e7781" stroke-width="1.6"/>
+  <line x1="170" y1="256" x2="170" y2="306" stroke="#6e7781" stroke-width="1.6" marker-end="url(#a)"/>
+  <line x1="450" y1="256" x2="450" y2="306" stroke="#6e7781" stroke-width="1.6" marker-end="url(#a)"/>
+  <line x1="730" y1="256" x2="730" y2="306" stroke="#6e7781" stroke-width="1.6" marker-end="url(#a)"/>
+  <rect x="298" y="264" width="304" height="20" rx="10" fill="#ffffff"/>
+  <text x="450" y="279" text-anchor="middle" font-size="11.5" fill="#57606a">config stream + heartbeats · gRPC / mTLS</text>
+
+  <!-- Edges -->
+  <g>
+    <rect x="90" y="308" width="160" height="118" rx="10" fill="#eff6ff" stroke="#0969da"/>
+    <text x="170" y="331" text-anchor="middle" font-size="13" font-weight="700" fill="#0a3069">edge-1</text>
+    <text x="170" y="352" text-anchor="middle" font-size="11.5" fill="#1f2328">HTTP proxy</text>
+    <text x="170" y="371" text-anchor="middle" font-size="11.5" fill="#1f2328">L1 cache (local)</text>
+    <text x="170" y="390" text-anchor="middle" font-size="11.5" fill="#1f2328">L2 shard (owned)</text>
+    <text x="170" y="411" text-anchor="middle" font-size="11" fill="#57606a">:8081</text>
+
+    <rect x="370" y="308" width="160" height="118" rx="10" fill="#eff6ff" stroke="#0969da"/>
+    <text x="450" y="331" text-anchor="middle" font-size="13" font-weight="700" fill="#0a3069">edge-2</text>
+    <text x="450" y="352" text-anchor="middle" font-size="11.5" fill="#1f2328">HTTP proxy</text>
+    <text x="450" y="371" text-anchor="middle" font-size="11.5" fill="#1f2328">L1 cache (local)</text>
+    <text x="450" y="390" text-anchor="middle" font-size="11.5" fill="#1f2328">L2 shard (owned)</text>
+    <text x="450" y="411" text-anchor="middle" font-size="11" fill="#57606a">:8082</text>
+
+    <rect x="650" y="308" width="160" height="118" rx="10" fill="#eff6ff" stroke="#0969da"/>
+    <text x="730" y="331" text-anchor="middle" font-size="13" font-weight="700" fill="#0a3069">edge-3</text>
+    <text x="730" y="352" text-anchor="middle" font-size="11.5" fill="#1f2328">HTTP proxy</text>
+    <text x="730" y="371" text-anchor="middle" font-size="11.5" fill="#1f2328">L1 cache (local)</text>
+    <text x="730" y="390" text-anchor="middle" font-size="11.5" fill="#1f2328">L2 shard (owned)</text>
+    <text x="730" y="411" text-anchor="middle" font-size="11" fill="#57606a">:8083</text>
+  </g>
+
+  <!-- peer cache ring -->
+  <line x1="250" y1="460" x2="370" y2="460" stroke="#0969da" stroke-width="1.6" marker-start="url(#ab)" marker-end="url(#ab)"/>
+  <line x1="530" y1="460" x2="650" y2="460" stroke="#0969da" stroke-width="1.6" marker-start="url(#ab)" marker-end="url(#ab)"/>
+  <line x1="170" y1="426" x2="170" y2="460" stroke="#0969da" stroke-width="1.6"/>
+  <line x1="450" y1="426" x2="450" y2="460" stroke="#0969da" stroke-width="1.6"/>
+  <line x1="730" y1="426" x2="730" y2="460" stroke="#0969da" stroke-width="1.6"/>
+  <rect x="322" y="450" width="256" height="20" rx="10" fill="#ffffff"/>
+  <text x="450" y="465" text-anchor="middle" font-size="11.5" font-weight="600" fill="#0a3069">consistent-hash peer cache · gRPC / mTLS</text>
+
+  <!-- to origin -->
+  <line x1="450" y1="470" x2="450" y2="528" stroke="#6e7781" stroke-width="1.6" marker-end="url(#a)"/>
+  <rect x="398" y="488" width="104" height="20" rx="10" fill="#ffffff"/>
+  <text x="450" y="503" text-anchor="middle" font-size="11.5" fill="#57606a">cache miss</text>
+
+  <rect x="330" y="532" width="240" height="72" rx="10" fill="#eefbf1" stroke="#1a7f37"/>
+  <text x="450" y="557" text-anchor="middle" font-size="13" font-weight="700" fill="#0f5323">Origin Pool</text>
+  <text x="450" y="577" text-anchor="middle" font-size="11.5" fill="#1f2328">weighted round-robin · health checks</text>
+  <text x="450" y="594" text-anchor="middle" font-size="11.5" fill="#1f2328">circuit breaker · deadline-aware retries</text>
+
+  <text x="450" y="634" text-anchor="middle" font-size="11.5" fill="#57606a">The data plane keeps serving cached traffic when the entire control plane is down.</text>
+</svg>

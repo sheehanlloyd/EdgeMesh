@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 380" width="900" height="380" font-family="ui-sans-serif, -apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+  <title>Adding a fourth edge moves 25.9 percent of 100,000 keys with the consistent hash ring, against 75.1 percent with modulo hashing.</title>
+  <rect x="0" y="0" width="900" height="380" rx="10" fill="#ffffff" stroke="#d0d7de"/>
+
+  <text x="30" y="36" font-size="14" font-weight="700" fill="#1f2328">Growing the fleet from 3 edges to 4: how many of 100,000 keys change owner</text>
+  <text x="30" y="57" font-size="12" fill="#57606a">Lower is better. Every key that moves is a cache entry that has to be fetched from the origin again.</text>
+
+  <!-- consistent hash bar -->
+  <text x="30" y="104" font-size="12.5" font-weight="600" fill="#1f2328">Consistent hash ring</text>
+  <text x="30" y="121" font-size="11" fill="#57606a">128 virtual nodes per edge</text>
+  <rect x="250" y="86" width="560" height="40" rx="6" fill="#f6f8fa" stroke="#d0d7de"/>
+  <rect x="250" y="86" width="145" height="40" rx="6" fill="#ddf4ff" stroke="#0969da"/>
+  <text x="322" y="112" text-anchor="middle" font-size="13" font-weight="700" fill="#0a3069">25.9%</text>
+  <text x="826" y="112" font-size="11" fill="#57606a">moved</text>
+
+  <!-- modulo bar -->
+  <text x="30" y="184" font-size="12.5" font-weight="600" fill="#1f2328">Modulo hashing</text>
+  <text x="30" y="201" font-size="11" fill="#57606a">hash(key) % N</text>
+  <rect x="250" y="166" width="560" height="40" rx="6" fill="#f6f8fa" stroke="#d0d7de"/>
+  <rect x="250" y="166" width="421" height="40" rx="6" fill="#ffebe9" stroke="#cf222e"/>
+  <text x="460" y="192" text-anchor="middle" font-size="13" font-weight="700" fill="#82071e">75.1%</text>
+  <text x="826" y="192" font-size="11" fill="#57606a">moved</text>
+
+  <line x1="250" y1="228" x2="810" y2="228" stroke="#d0d7de"/>
+  <text x="250" y="244" font-size="10.5" fill="#8c959f">0%</text>
+  <text x="810" y="244" text-anchor="end" font-size="10.5" fill="#8c959f">100%</text>
+
+  <rect x="30" y="266" width="840" height="86" rx="8" fill="#f6f8fa" stroke="#d0d7de"/>
+  <text x="46" y="290" font-size="12" font-weight="700" fill="#1f2328">Why the difference matters</text>
+  <text x="46" y="311" font-size="12" fill="#1f2328">Modulo hashing rehashes almost the entire keyspace whenever the node count changes, so a single scale-up empties</text>
+  <text x="46" y="329" font-size="12" fill="#1f2328">three quarters of the cache at once and sends that load straight to the origin. The ring moves only the keys that</text>
+  <text x="46" y="347" font-size="12" fill="#1f2328">belong to the new node. Reproduce with: go test ./internal/ring/ -run KeyMovement -v</text>
+</svg>
