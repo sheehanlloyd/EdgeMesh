@@ -1,0 +1,12 @@
+# Terraform state contains resource identifiers and can contain secrets. It must
+# never be committed.
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+!example.tfvars
+crash.log
+override.tf
+override.tf.json

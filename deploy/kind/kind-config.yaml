@@ -1,0 +1,23 @@
+# kind cluster for EdgeMesh.
+#
+# Three workers so the topology-spread constraints in the Helm chart have
+# somewhere to spread to: with one node, "keep Raft members on separate nodes"
+# is unsatisfiable and the constraint would be silently useless.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: edgemesh
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+    extraPortMappings:
+      # The edge service is reachable on the host at these ports.
+      - {containerPort: 30080, hostPort: 8080, protocol: TCP}
+      - {containerPort: 30710, hostPort: 7100, protocol: TCP}
+  - role: worker
+  - role: worker
+  - role: worker

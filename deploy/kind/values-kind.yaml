@@ -1,0 +1,49 @@
+# Helm values for a kind deployment.
+#
+# Resource requests are reduced so the whole topology fits on a laptop, and the
+# edge service is exposed through a NodePort that the kind config maps to the
+# host.
+mode: development
+
+image:
+  pullPolicy: Never   # images are loaded into kind with `kind load`
+  control: {repository: edgemesh/control, tag: dev}
+  edge:    {repository: edgemesh/edge,    tag: dev}
+  origin:  {repository: edgemesh/origin,  tag: dev}
+
+control:
+  replicaCount: 3
+  persistence:
+    enabled: true
+    size: 1Gi
+  resources:
+    requests: {cpu: 50m, memory: 96Mi}
+    limits:   {memory: 256Mi}
+
+edge:
+  replicaCount: 3
+  service:
+    type: NodePort
+    port: 80
+  cache:
+    # Small budgets so three edges plus the control plane fit comfortably.
+    l1MaxBytes: 33554432    # 32 MiB
+    l2MaxBytes: 67108864    # 64 MiB
+    maxObjectBytes: 4194304 # 4 MiB
+    shards: 16
+    replicationFactor: 2
+  resources:
+    requests: {cpu: 100m, memory: 160Mi}
+    limits:   {memory: 384Mi}
+
+origin:
+  enabled: true
+  replicaCount: 2
+  resources:
+    requests: {cpu: 25m, memory: 32Mi}
+    limits:   {memory: 64Mi}
+
+telemetry:
+  logLevel: info
+  logFormat: json
+  enablePprof: true
