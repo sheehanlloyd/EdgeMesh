@@ -1,0 +1,262 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A new push supersedes an in-flight run for the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: "1.27"
+
+jobs:
+  lint:
+    name: Format and lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: gofmt
+        run: make fmt-check
+
+      - name: go vet
+        run: go vet ./...
+
+      # No linter catches `_ = someVar`: it is neither a wasted assignment nor
+      # an unchecked error, so it silences the compiler while hiding a
+      # measurement that is never recorded or a parameter that is never used.
+      - name: No dead assignments
+        run: make no-dead-assignments
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          args: --timeout=5m
+
+  proto:
+    name: Generated code is current
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install protoc
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y protobuf-compiler
+
+      - name: Install protoc plugins
+        run: |
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+
+      # Generated code drifting from the .proto files is a silent source of
+      # confusing failures, so it is checked rather than trusted.
+      - name: Check generated code matches the schema
+        run: make proto-check
+
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Build
+        run: make build
+
+      - name: Unit tests
+        run: make test
+
+      - name: Coverage
+        run: make cover
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage
+          path: coverage.out
+          retention-days: 7
+
+  race:
+    name: Race detector
+    runs-on: ubuntu-latest
+    # Consensus and cache tests are timing-sensitive; the race detector slows
+    # them enough to need real headroom.
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Unit tests under -race
+        run: make test-race
+
+  integration:
+    name: Integration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Multi-node integration suite
+        run: make test-integration
+
+      # These exercise real Raft elections and real gRPC; a flake here is a
+      # signal, not noise, so the run is repeated to surface intermittency.
+      - name: Repeat to catch intermittency
+        run: go test -count=3 -timeout 900s ./test/integration/...
+
+  fuzz:
+    name: Fuzz smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Short fuzz windows
+        run: make fuzz-smoke
+
+  security:
+    name: Vulnerability scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+  images:
+    name: Container images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build control image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.control
+          push: false
+          tags: edgemesh/control:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build edge image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.edge
+          push: false
+          tags: edgemesh/edge:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build origin image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.origin
+          push: false
+          tags: edgemesh/origin:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  helm:
+    name: Helm chart
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - uses: azure/setup-helm@v4
+        with:
+          version: latest
+
+      - name: Lint
+        run: helm lint deploy/helm/edgemesh
+
+      - name: Render
+        run: helm template edgemesh deploy/helm/edgemesh > /dev/null
+
+      # The strongest check: the chart's output must be configuration the
+      # binaries actually accept, not merely valid YAML.
+      - name: Rendered configuration must pass EdgeMesh validation
+        run: go test ./test/deploy/... -v
+
+  terraform:
+    name: Terraform
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+
+      - name: Format
+        run: terraform -chdir=deploy/terraform/aws fmt -check -recursive
+
+      # No credentials are configured and no backend is initialized, so this
+      # job cannot reach AWS even by accident. `apply` is never run anywhere in
+      # this repository. See docs/adr/008.
+      - name: Init without a backend
+        run: terraform -chdir=deploy/terraform/aws init -backend=false -input=false
+
+      - name: Validate
+        run: terraform -chdir=deploy/terraform/aws validate
+
+  dashboards:
+    name: Grafana dashboards
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate dashboard JSON
+        run: make dashboards
+
+  scripts:
+    name: Shell scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y shellcheck
+          # SC1091: sourced files are resolved at runtime, not lint time.
+          shellcheck -e SC1091 scripts/*.sh scripts/**/*.sh deploy/kind/*.sh

@@ -1,0 +1,119 @@
+# golangci-lint configuration for EdgeMesh (v2 schema).
+#
+# The selection favours correctness and resource-safety checks over style
+# opinions: this codebase already has a consistent style, and the linters that
+# earn their place are the ones that find bugs.
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  enable:
+    - bodyclose      # a leaked response body defeats connection reuse
+    - contextcheck   # every network call must respect cancellation
+    - errorlint      # correct use of %w and errors.Is/As
+    - gosec
+    - misspell
+    - nilerr
+    - noctx          # HTTP requests must carry a context
+    - unconvert
+    - unparam       # a parameter or result nobody uses is usually unfinished work
+    - wastedassign
+
+  settings:
+    errcheck:
+      check-type-assertions: true
+      check-blank: false
+      exclude-functions:
+        # Writes to stdout and to a tabwriter. A failed write to the terminal is
+        # not actionable, and checking every one would bury the errors that are.
+        - fmt.Fprintf
+        - fmt.Fprint
+        - fmt.Fprintln
+        - (*text/tabwriter.Writer).Flush
+    govet:
+      enable:
+        - shadow
+    gosec:
+      excludes:
+        # Weak randomness is used only for retry jitter and election timeouts,
+        # neither of which is a security decision.
+        - G404
+        # Integer conversions between int/int64/uint64 for cache budgets, object
+        # sizes, and log indices. Every source is either a length (never
+        # negative) or a configuration value already range-checked at load time,
+        # and Go's int is 64-bit on every platform EdgeMesh targets.
+        - G115
+    staticcheck:
+      checks: ["all"]
+
+  exclusions:
+    generated: lax
+    rules:
+      # The CLI's entire purpose is to make requests to an operator-supplied
+      # address and read an operator-supplied file. Flagging that as SSRF or
+      # file inclusion is a false positive by construction.
+      - path: cmd/edgemeshctl/
+        linters: [gosec]
+        text: "(G704|G304)"
+
+      # net.Listen at process startup. A listener is not an outbound request, so
+      # there is no context to respect; the caller's shutdown path closes it.
+      - linters: [noctx]
+        text: "net.Listen must not be called"
+
+      # Port validation is a pure syntactic check against the services database.
+      - path: internal/config/
+        linters: [noctx]
+
+      # A shadowed err inside an if or a closure is idiomatic Go and reads more
+      # clearly than inventing a second name; the cases that matter are caught
+      # by ineffassign and staticcheck.
+      - linters: [govet]
+        text: "shadow: declaration of \"(err|ok)\""
+
+      # Test files legitimately ignore errors on cleanup paths and use fixed
+      # credentials for authentication tests.
+      - path: _test\.go
+        linters: [errcheck, gosec, noctx, contextcheck, bodyclose]
+
+      # Test helpers deliberately take parameters a given caller does not vary,
+      # and a `go func(w int)` worker index is idiomatic even when unread. The
+      # signal unparam exists for is unfinished production code.
+      - path: _test\.go
+        linters: [unparam]
+
+      # Generated protobuf code is not ours to lint.
+      - path: api/gen/
+        linters: [errcheck, gosec, staticcheck, unused, misspell]
+
+      # container/list stores `any`, so retrieving a value requires a type
+      # assertion. Each of these lists is private to its own type and only ever
+      # holds the asserted type, so a failure would be a programming error
+      # rather than a runtime condition. check-type-assertions stays enabled
+      # everywhere else.
+      - linters: [errcheck]
+        source: '\.Value\.\(\*'
+
+      # The demo origin and the admin API write plain text and JSON, never
+      # HTML, and always set an explicit Content-Type. There is no HTML context
+      # for a script to execute in.
+      - path: (cmd/origin-demo/|internal/control/api/)
+        linters: [gosec]
+        text: 'G705'
+
+      # Opening the configuration file the operator named on the command line is
+      # the program's entire purpose.
+      - path: internal/config/
+        linters: [gosec]
+        text: 'G304'
+
+formatters:
+  enable:
+    - gofmt
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

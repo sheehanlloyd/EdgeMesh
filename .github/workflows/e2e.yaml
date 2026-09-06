@@ -1,0 +1,58 @@
+name: End-to-end
+
+# The end-to-end suite starts real processes and drives the demo, so it runs on
+# a schedule and on demand rather than on every pull request.
+on:
+  schedule:
+    - cron: "0 6 * * 1"   # Mondays, 06:00 UTC
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: Real processes
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27"
+          cache: true
+
+      - name: Build binaries
+        run: make build
+
+      - name: End-to-end suite
+        run: make test-e2e
+
+      - name: Start the local topology
+        run: |
+          ./scripts/run-local.sh start
+          sleep 5
+
+      - name: Run the scripted demo
+        run: ./scripts/demo.sh
+
+      - name: Collect logs on failure
+        if: failure()
+        run: |
+          echo "=== control plane ==="
+          tail -50 .run/logs/cp-*.log || true
+          echo "=== edges ==="
+          tail -50 .run/logs/edge-*.log || true
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-logs
+          path: .run/logs/
+          retention-days: 7
+
+      - name: Stop the topology
+        if: always()
+        run: ./scripts/run-local.sh stop || true
