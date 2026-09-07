@@ -344,6 +344,12 @@ func TestCoalescerConcurrentMixedKeys(t *testing.T) {
 		}(w)
 	}
 	wg.Wait()
+	// Timed-out waiters return before the fill goroutine deletes the call.
+	// Drain, don't assert instant emptiness — that's a race, not a leak.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && (c.InFlight() != 0 || c.Waiters() != 0) {
+		time.Sleep(time.Millisecond)
+	}
 	if c.InFlight() != 0 {
 		t.Fatalf("%d calls leaked", c.InFlight())
 	}

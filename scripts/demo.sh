@@ -168,6 +168,9 @@ ok "the data plane was unaffected by the control-plane election"
 # ---------------------------------------------------------------------------
 step "9. Confirm a new leader was elected in a higher term"
 # ---------------------------------------------------------------------------
+# The source path is assembled by leaving the single-quoted -c string so
+# BASH_SOURCE expands here, not inside the child. SC2016 is that dance.
+# shellcheck disable=SC2016
 wait_for 30 "a new leader" bash -c '
   source "'"$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"'/lib.sh" >/dev/null 2>&1
   [ -n "$(leader_id)" ]'

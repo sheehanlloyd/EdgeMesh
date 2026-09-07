@@ -46,7 +46,7 @@ info "surviving edges: ${SURVIVORS[*]:-none}"
 
 OK=0; FAILED=0
 COUNTER="chaos-$(date +%s)"
-for i in $(seq 1 20); do
+for _ in $(seq 1 20); do
   for edge in "${SURVIVORS[@]}"; do
     code="$(edge_status "$edge" "/counter/$COUNTER")"
     if [ "$code" = "200" ]; then OK=$((OK+1)); else FAILED=$((FAILED+1)); info "  $edge returned $code"; fi

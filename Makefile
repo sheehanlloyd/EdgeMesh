@@ -56,8 +56,8 @@ bootstrap: ## Report missing prerequisites and how to install them
 	check k6 version "brew install k6 | https://k6.io/docs/get-started/installation/"; \
 	echo; \
 	echo "Go plugins used by 'make proto' are installed into \$$(go env GOPATH)/bin by:"; \
-	echo "  go install google.golang.org/protobuf/cmd/protoc-gen-go@latest"; \
-	echo "  go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest"; \
+	echo "  go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.12"; \
+	echo "  go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.2"; \
 	if [ $$missing -ne 0 ]; then \
 	  echo; \
 	  echo "Some prerequisites are missing. Nothing was installed: install them yourself"; \
@@ -79,13 +79,26 @@ proto: ## Generate protobuf and gRPC code
 	@echo "generated code is in api/gen (left unstaged for review)"
 
 .PHONY: proto-check
+# Compares a fresh regen against the committed stubs. The protoc version
+# banner (apt 3.21 vs brew 7.x) is ignored; a schema drift is not.
 proto-check: ## Fail if generated code is stale relative to the .proto files
 	@tmp=$$(mktemp -d); \
 	cp -R api/gen "$$tmp/before"; \
 	$(MAKE) --no-print-directory proto >/dev/null; \
-	if ! diff -r "$$tmp/before" api/gen >/dev/null 2>&1; then \
+	cp -R api/gen "$$tmp/after"; \
+	rm -rf api/gen; \
+	cp -R "$$tmp/before" api/gen; \
+	normalize() { \
+	  find "$$1" -name '*.go' -exec sed -i.bak \
+	    -e 's|^//[[:space:]]*protoc[[:space:]].*|// protoc|' \
+	    -e 's|^// - protoc[[:space:]].*|// - protoc|' {} +; \
+	  find "$$1" -name '*.bak' -delete; \
+	}; \
+	normalize "$$tmp/before"; \
+	normalize "$$tmp/after"; \
+	if ! diff -r "$$tmp/before" "$$tmp/after" >/dev/null 2>&1; then \
 	  echo "generated protobuf code is out of date; run 'make proto'"; \
-	  diff -rq "$$tmp/before" api/gen || true; \
+	  diff -rq "$$tmp/before" "$$tmp/after" || true; \
 	  rm -rf "$$tmp"; exit 1; \
 	fi; \
 	rm -rf "$$tmp"; \
