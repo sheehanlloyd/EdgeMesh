@@ -32,4 +32,8 @@ jobs:
 
       - uses: github/codeql-action/autobuild@v3
 
+      # Private repos without GitHub Advanced Security cannot upload SARIF.
+      # Run the analysis anyway so the check is real; skip the upload that 403s.
       - uses: github/codeql-action/analyze@v3
+        with:
+          upload: never
