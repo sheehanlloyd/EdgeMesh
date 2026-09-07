@@ -199,10 +199,17 @@ header_policy:
 YAML
 ctl routes apply -f "$NEW_ROUTE" >/dev/null
 rm -f "$NEW_ROUTE"
-sleep 2
 
-SERVED_BY="$(curl -fsS -D- -o /dev/null --max-time 10 -H "Host: $EDGEMESH_HOST" \
-  "$EDGE1/static/post-failover" | grep -i '^x-edgemesh-route:' | tr -d '\r' | awk '{print $2}')"
+# After a leader change the stream can lag a couple of seconds; poll rather
+# than assuming a fixed sleep is enough.
+SERVED_BY=""
+deadline=$(( $(date +%s) + 30 ))
+while [ "$(date +%s)" -lt "$deadline" ]; do
+  SERVED_BY="$(curl -fsS -D- -o /dev/null --max-time 10 -H "Host: $EDGEMESH_HOST" \
+    "$EDGE1/static/post-failover" 2>/dev/null | grep -i '^x-edgemesh-route:' | tr -d '\r' | awk '{print $2}')"
+  [ "$SERVED_BY" = "post-failover-route" ] && break
+  sleep 0.4
+done
 info "route serving /static: $SERVED_BY"
 [ "$SERVED_BY" = "post-failover-route" ] || \
   fail "the new route did not propagate after failover (got '$SERVED_BY')"
