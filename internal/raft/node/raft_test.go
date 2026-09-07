@@ -491,6 +491,11 @@ func TestFollowerRejectsProposeWithLeaderHint(t *testing.T) {
 			break
 		}
 	}
+	// waitForLeader only asks the leader; under -race a follower can still
+	// be catching up on the heartbeat that stamps leaderID.
+	c.waitFor(3*time.Second, "follower knows the leader", func() bool {
+		return c.nodes[follower].LeaderID() == leader
+	})
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	_, err := c.proposeRoute(ctx, follower, "rejected")
